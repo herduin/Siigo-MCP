@@ -66,3 +66,12 @@ jobs:
 
       - name: Image digest
         run: echo ${{ steps.build-and-push.outputs.digest }}
+
+      - name: Wait for registry propagation
+        if: github.event_name != 'pull_request'
+        run: sleep 10
+
+      - name: Trigger Portainer stack update
+        if: github.event_name != 'pull_request'
+        run: |
+          curl -fsSL -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}"
