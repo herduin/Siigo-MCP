@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  siigo-mcp:
+    image: ghcr.io/herduin/siigo-mcp-server:latest
+    container_name: siigo-mcp-server
+    restart: unless-stopped
+    ports:
+      - "3230:3230"
+    environment:
+      # Server Configuration
+      PORT: "3230"
+      MCP_PATH: "/mcp"
+      NODE_ENV: "production"
+
+      # MCP Authentication (optional)
+      MCP_AUTH_TOKEN: "${MCP_AUTH_TOKEN:-}"
+
+      # Siigo API Configuration
+      SIIGO_BASE_URL: "${SIIGO_BASE_URL:-https://api.siigo.com}"
+      SIIGO_USERNAME: "${SIIGO_USERNAME}"
+      SIIGO_ACCESS_KEY: "${SIIGO_ACCESS_KEY}"
+      SIIGO_PARTNER_ID: "${SIIGO_PARTNER_ID:-}"
+
+      # API Behavior
+      SIIGO_TIMEOUT_MS: "${SIIGO_TIMEOUT_MS:-30000}"
+      SIIGO_MAX_RETRIES: "${SIIGO_MAX_RETRIES:-3}"
+
+      # Security
+      ENABLE_WRITE_TOOLS: "${ENABLE_WRITE_TOOLS:-false}"
+
+      # Rate Limiting
+      RATE_LIMIT_WINDOW_MS: "${RATE_LIMIT_WINDOW_MS:-60000}"
+      RATE_LIMIT_MAX_REQUESTS: "${RATE_LIMIT_MAX_REQUESTS:-100}"
+
+      # Request Limits
+      MAX_PAYLOAD_SIZE: "${MAX_PAYLOAD_SIZE:-10mb}"
+
+      # Logging
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3230/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Resource limits (optional - uncomment if needed)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.25'
+    #       memory: 256M
