@@ -124,7 +124,7 @@ docker-compose down
 | `SIIGO_BASE_URL` | No | `https://api.siigo.com` | Siigo API base URL |
 | `SIIGO_USERNAME` | **Yes** | - | Siigo API username |
 | `SIIGO_ACCESS_KEY` | **Yes** | - | Siigo API access key |
-| `SIIGO_PARTNER_ID` | No | - | Siigo partner ID (if applicable) |
+| `SIIGO_PARTNER_ID` | **Recomendado** | - | Partner-Id asignado por Siigo. La API lo **exige** en los endpoints de datos (clientes, facturas, etc.); sin un valor válido devuelven `400 invalid_partner_id`. Solo `/auth` y `/health` funcionan sin él. |
 | `SIIGO_TIMEOUT_MS` | No | `30000` | API request timeout (ms) |
 | `SIIGO_MAX_RETRIES` | No | `3` | Max retry attempts |
 | `ENABLE_WRITE_TOOLS` | No | `false` | Enable write operations |
@@ -176,44 +176,53 @@ The AI agent can now:
 
 ## 🛠️ Available MCP Tools
 
-### Authentication & Diagnostics
-- `siigo_health_check` - Check API connectivity
-- `siigo_get_token_status` - Get auth token status
-- `siigo_raw_request` - Make raw API requests
+> **Descúbrelas en runtime:** llama a `siigo_list_tools` para obtener el catálogo
+> completo agrupado por dominio. Cada tool publica su contrato exacto en
+> `inputSchema` (entradas) y `outputSchema` (salidas) vía `tools/list`.
+> Convenciones: fechas `YYYY-MM-DD`; paginación `page` / `page_size`; los listados
+> devuelven `{ pagination, results, _links }` envuelto en `{ success, data }`.
 
-### Customer Management
-- `siigo_list_customers` - List customers (paginated)
-- `siigo_get_customer` - Get customer by ID
-- `siigo_search_customers` - Search customers
+### Meta / Diagnóstico
+- `siigo_list_tools` - Catálogo agéntico de todas las herramientas (llamar primero)
+- `siigo_health_check` - Verifica conectividad con la API
+- `siigo_get_token_status` - Estado del token de autenticación
+- `siigo_raw_request` - Petición cruda a cualquier endpoint
 
-### Invoicing
-- `siigo_list_invoices` - List invoices with filters
-- `siigo_get_invoice` - Get invoice details
-- `siigo_search_invoices` - Search invoices
-- `siigo_get_invoice_pdf` - Get invoice PDF URL
-- `siigo_get_invoice_xml` - Get electronic stamp XML
+### Clientes
+- `siigo_list_customers` - Lista clientes (filtros: identification, branch_office, created/updated)
+- `siigo_get_customer` - Cliente por ID (GUID)
+- `siigo_search_customers` - Busca clientes por identificación
 
-### Products & Inventory
-- `siigo_list_products` - List products
-- `siigo_get_product` - Get product details
-- `siigo_search_products` - Search products
-- `siigo_get_product_stock` - Get stock levels
+### Facturas de venta
+- `siigo_list_invoices` - Lista facturas (created/updated/date ranges, customer_identification, name, document_id)
+- `siigo_get_invoice` - Factura por ID
+- `siigo_search_invoices` - Busca por name / customer_identification / document_id
+- `siigo_get_invoice_pdf` - PDF de la factura
+- `siigo_get_invoice_xml` - XML de la factura electrónica (DIAN)
 
-### Taxes & Catalogs
-- `siigo_list_taxes` - List tax types
-- `siigo_list_document_types` - List document types
-- `siigo_list_payment_methods` - List payment methods
-- `siigo_list_cost_centers` - List cost centers
-- `siigo_list_sellers` - List sellers
+### Productos / Inventario
+- `siigo_list_products` - Lista productos (filtros: code, created/updated)
+- `siigo_get_product` - Producto por ID
+- `siigo_search_products` - Busca productos por código
+- `siigo_get_product_stock` - Stock/inventario derivado del producto
 
-### Users
-- `siigo_list_users` - List system users
+### Catálogos
+- `siigo_list_taxes` - Tipos de impuesto
+- `siigo_list_document_types` - Tipos de documento (**requiere** `type`: FV|NC|FC|DS|RC|RP|CC|C)
+- `siigo_list_payment_methods` - Formas de pago (**requiere** `document_type`)
+- `siigo_list_cost_centers` - Centros de costo
+- `siigo_list_sellers` - Vendedores (usuarios)
+- `siigo_list_users` - Usuarios del sistema
 
-### Payments & Receivables
-- `siigo_list_payments` - List payments
-- `siigo_get_payment` - Get payment details
-- `siigo_list_receivables` - List outstanding invoices
-- `siigo_list_accounts_receivable_by_customer` - Get customer AR
+### Recibos de caja y pago
+- `siigo_list_vouchers` - Lista recibos de caja (cobros recibidos)
+- `siigo_get_voucher` - Recibo de caja por ID
+- `siigo_list_payment_receipts` - Lista recibos de pago/egreso
+- `siigo_get_payment_receipt` - Recibo de pago/egreso por ID
+
+### Cartera (cuentas por cobrar)
+- `siigo_list_receivables` - Facturas con saldo pendiente (balance > 0)
+- `siigo_list_accounts_receivable_by_customer` - Cartera de un cliente (por customer_identification)
 
 ### Credit Notes
 - `siigo_list_credit_notes` - List credit notes
@@ -346,6 +355,13 @@ docker push ghcr.io/herduin/siigo-mcp:latest
 - Verify `SIIGO_USERNAME` and `SIIGO_ACCESS_KEY` are correct
 - Check token status: Call `siigo_get_token_status` tool
 - Ensure network connectivity to `api.siigo.com`
+
+### `400 invalid_partner_id` en endpoints de datos
+
+Siigo **exige** el header `Partner-Id` con un valor válido (el que Siigo asignó a tu
+integración) en los endpoints de datos. Si `siigo_health_check` responde OK pero
+`siigo_list_customers` / `siigo_list_invoices` devuelven `400 invalid_partner_id`,
+configura `SIIGO_PARTNER_ID` con tu Partner-Id válido y reinicia el servicio.
 
 ### MCP Integration Issues
 

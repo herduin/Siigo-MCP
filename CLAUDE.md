@@ -50,8 +50,9 @@ Every tool category lives in `src/tools/*.tools.ts` and exports a `registerXxxTo
 ```ts
 tools.set('siigo_xxx', {
   name: 'siigo_xxx',
-  description: '...',           // AI-facing, verbose on purpose
-  inputSchema: { type: 'object', properties: {...}, required: [...] },  // raw JSON Schema for MCP
+  description: '...',           // AI-facing, en español, DEBE describir la salida
+  inputSchema: { type: 'object', properties: {...}, required: [...] },  // JSON Schema (entradas)
+  outputSchema: paginated(invoiceSchema),  // JSON Schema (salidas) desde output.schemas.ts
   handler: async (args) => {
     const params = validateInput(zodSchema, args);   // Zod validation at the boundary
     const result = await client.get(SIIGO_ENDPOINTS.X, { params });
@@ -60,7 +61,13 @@ tools.set('siigo_xxx', {
 });
 ```
 
-Note `inputSchema` (JSON Schema, advertised to clients) and the Zod schema in `src/schemas/siigo.schemas.ts` (runtime validation) are **two separate definitions** — keep them in sync when editing a tool's params. To add a tool category, create `src/tools/<x>.tools.ts` with a `register…` export and wire it in `mcpServer.ts:registerAllTools()`.
+Three schemas per tool, keep them aligned:
+- `inputSchema` (JSON Schema, advertised to clients) and the Zod schema in `src/schemas/siigo.schemas.ts` (runtime validation) — **two separate definitions**, same fields/required.
+- `outputSchema` (JSON Schema) built from helpers in `src/schemas/output.schemas.ts` — `paginated(x)`, `single(x)`, `arrayOf(x)`, `envelope(x)` plus entity schemas (`customerSchema`, `invoiceSchema`, …) derived from the `*Out` objects in `siigoapi.apib`. `mcpServer.ts:createServer()` propagates `outputSchema` into `tools/list`.
+
+**Query param names must match Siigo exactly** (snake_case): `page`/`page_size`, `created_start`/`created_end`, `updated_start`/`updated_end`, `date_start`/`date_end` (invoices), `identification`/`branch_office` (customers), `customer_identification`/`customer_branch_office`/`name`/`document_id` (invoices), `code` (products). The Zod schema both validates and **whitelists** params (unknown keys are stripped), so the validated object is passed straight as `params`. Don't reintroduce camelCase (`pageSize`, `startDate`, `customerId`) — Siigo silently ignores them. The reference is the API Blueprint `siigoapi.apib` (query tables ~2357/2710/3623; `*Out` objects 514-2188).
+
+`siigo_list_tools` (`src/tools/meta.tools.ts`) is an agentic catalog tool; the SDK `instructions` (in `createServer()`) tell clients to call it first. To add a tool category, create `src/tools/<x>.tools.ts` with a `register…` export and wire it in `mcpServer.ts:registerAllTools()`.
 
 ### Write-tools flag is plumbed but not enforced
 
@@ -73,6 +80,10 @@ Note `inputSchema` (JSON Schema, advertised to clients) and the Zod schema in `s
 - **response**: on `401`, refreshes the token once (`_authRetry` guard) and replays the request.
 
 `SiigoAuth` (`siigoAuth.ts`) caches the token in memory and treats it as expired at **90% of `expires_in`** to refresh early. Every request also goes through `withRetry` (`src/utils/retries.ts`) using `maxRetries` from config. Errors are normalized in `enhanceError` into friendly `Error` messages by status code. Endpoint URLs are centralized in `src/siigo/endpoints.ts` — use `SIIGO_ENDPOINTS`, don't hardcode paths.
+
+**Partner-Id is mandatory for data endpoints.** Siigo rejects `/v1/customers`, `/v1/invoices`, etc. with `400 invalid_partner_id` unless the `Partner-Id` header carries a value Siigo assigned to the integration. The client only sends it when `SIIGO_PARTNER_ID` is set (`siigoClient.ts` constructor). `/auth` and `/health` work without it, so `siigo_health_check` can pass while data tools 400 — set `SIIGO_PARTNER_ID` to fix.
+
+**No `/v1/payments` endpoint exists in Siigo.** "Pagos recibidos" = Recibos de caja (`/v1/vouchers`); "pagos/egresos" = `/v1/payment-receipts`. Don't reintroduce a `/v1/payments` endpoint.
 
 ### HTTP endpoints
 

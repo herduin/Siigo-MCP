@@ -83,12 +83,14 @@ describe('HttpServer — MCP Streamable HTTP transport', () => {
     expect(res.status).toBe(401);
   });
 
-  it('initialize returns an Mcp-Session-Id and serverInfo', async () => {
+  it('initialize returns an Mcp-Session-Id, serverInfo and instructions', async () => {
     const res = await initialize();
     expect(res.status).toBe(200);
     expect(res.headers.get('mcp-session-id')).toBeTruthy();
     const body = parseSse(await res.text());
     expect(body.result.serverInfo.name).toBe('siigo-mcp-server');
+    // instructions debe indicar al agente que consulte siigo_list_tools al conectarse
+    expect(body.result.instructions).toContain('siigo_list_tools');
   });
 
   it('lists all tools when reusing the session', async () => {
@@ -113,6 +115,44 @@ describe('HttpServer — MCP Streamable HTTP transport', () => {
     expect(Array.isArray(body.result.tools)).toBe(true);
     expect(body.result.tools.length).toBeGreaterThanOrEqual(30);
     expect(body.result.tools.some((t: { name: string }) => t.name === 'siigo_health_check')).toBe(true);
+    // siigo_list_tools debe estar publicada
+    expect(body.result.tools.some((t: { name: string }) => t.name === 'siigo_list_tools')).toBe(true);
+    // Toda tool debe declarar inputSchema y outputSchema (contratos completos)
+    for (const tool of body.result.tools) {
+      expect(tool.inputSchema, `${tool.name} sin inputSchema`).toBeTruthy();
+      expect(tool.outputSchema, `${tool.name} sin outputSchema`).toBeTruthy();
+    }
+  });
+
+  it('siigo_list_tools returns a grouped agentic catalog', async () => {
+    const initRes = await initialize();
+    const sessionId = initRes.headers.get('mcp-session-id')!;
+    await initRes.text();
+    await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: headers(sessionId),
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+    });
+
+    const res = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: headers(sessionId),
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: { name: 'siigo_list_tools', arguments: {} },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = parseSse(await res.text());
+    const payload = JSON.parse(body.result.content[0].text);
+    expect(payload.success).toBe(true);
+    expect(payload.data.total).toBeGreaterThanOrEqual(30);
+    expect(payload.data.groups.Clientes).toBeTruthy();
+    expect(payload.data.groups['Facturas de venta']).toBeTruthy();
+    // customer_statement debe quedar en Reportes, no en Clientes
+    expect(payload.data.groups.Reportes.some((t: { name: string }) => t.name === 'siigo_customer_statement')).toBe(true);
   });
 
   it('rejects a non-initialize POST without a session', async () => {
