@@ -1,4 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import express, { Request, Response } from 'express';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { MCPServer } from './mcpServer.js';
 import { createAuthMiddleware } from './authMiddleware.js';
 import { errorHandler, notFoundHandler } from './errorHandler.js';
@@ -15,6 +19,10 @@ export class HttpServer {
   private app: express.Application;
   private mcpServer: MCPServer;
   private config: HttpServerConfig;
+
+  // Active transports keyed by session id
+  private streamableTransports: Map<string, StreamableHTTPServerTransport> = new Map();
+  private sseTransports: Map<string, SSEServerTransport> = new Map();
 
   constructor(mcpServer: MCPServer, config: HttpServerConfig) {
     this.mcpServer = mcpServer;
@@ -38,6 +46,12 @@ export class HttpServer {
   }
 
   private setupRoutes() {
+    this.setupHealthRoutes();
+    this.setupStreamableHttpRoutes();
+    this.setupSseRoutes();
+  }
+
+  private setupHealthRoutes() {
     // Health check endpoint
     this.app.get('/health', (_req: Request, res: Response) => {
       res.json({
@@ -49,7 +63,7 @@ export class HttpServer {
     // Readiness check endpoint
     this.app.get('/ready', async (_req: Request, res: Response) => {
       try {
-        const siigoHealthy = await this.mcpServer['options'].siigoClient.healthCheck();
+        const siigoHealthy = await this.mcpServer.getSiigoClient().healthCheck();
         if (siigoHealthy) {
           res.json({
             status: 'ready',
@@ -79,138 +93,126 @@ export class HttpServer {
         version: '1.0.0',
         mcp: {
           path: this.config.mcpPath,
+          transports: ['streamable-http', 'sse'],
           tools: this.mcpServer.getTools().length,
         },
       });
     });
+  }
 
-    // MCP endpoint with auth middleware
+  /**
+   * Modern MCP transport: Streamable HTTP (stateful, with Mcp-Session-Id).
+   * Handles POST (messages), GET (server->client SSE stream) and DELETE (close).
+   */
+  private setupStreamableHttpRoutes() {
     const authMiddleware = createAuthMiddleware(this.config.authToken);
-    this.app.post(this.config.mcpPath, authMiddleware, async (req: Request, res: Response) => {
-      try {
-        const jsonrpcRequest = req.body;
+    const path = this.config.mcpPath;
 
-        // Validate JSON-RPC request
-        if (!jsonrpcRequest.jsonrpc || jsonrpcRequest.jsonrpc !== '2.0') {
-          return res.status(400).json({
+    // POST: client -> server messages (and session bootstrap on initialize)
+    this.app.post(path, authMiddleware, async (req: Request, res: Response) => {
+      try {
+        const sessionId = req.headers['mcp-session-id'] as string | undefined;
+        let transport = sessionId ? this.streamableTransports.get(sessionId) : undefined;
+
+        if (!transport && isInitializeRequest(req.body)) {
+          // New session
+          transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (sid) => {
+              this.streamableTransports.set(sid, transport!);
+              logger.info({ sessionId: sid }, 'Streamable HTTP session initialized');
+            },
+          });
+
+          transport.onclose = () => {
+            if (transport!.sessionId) {
+              this.streamableTransports.delete(transport!.sessionId);
+              logger.info({ sessionId: transport!.sessionId }, 'Streamable HTTP session closed');
+            }
+          };
+
+          const server = this.mcpServer.createServer();
+          await server.connect(transport);
+        }
+
+        if (!transport) {
+          res.status(400).json({
             jsonrpc: '2.0',
             error: {
-              code: -32600,
-              message: 'Invalid JSON-RPC request - missing or invalid jsonrpc field',
+              code: -32000,
+              message: 'Bad Request: no valid session ID provided',
             },
-            id: jsonrpcRequest.id || null,
+            id: null,
           });
+          return;
         }
 
-        // Handle initialize request
-        if (jsonrpcRequest.method === 'initialize') {
-          return res.json({
-            jsonrpc: '2.0',
-            result: {
-              protocolVersion: '2024-11-05',
-              capabilities: {
-                tools: {},
-              },
-              serverInfo: {
-                name: 'siigo-mcp-server',
-                version: '1.0.0',
-              },
-            },
-            id: jsonrpcRequest.id,
-          });
-        }
-
-        // Handle tools/list request
-        if (jsonrpcRequest.method === 'tools/list') {
-          const tools = this.mcpServer.getTools().map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-          }));
-
-          return res.json({
-            jsonrpc: '2.0',
-            result: {
-              tools,
-            },
-            id: jsonrpcRequest.id,
-          });
-        }
-
-        // Handle tools/call request
-        if (jsonrpcRequest.method === 'tools/call') {
-          const { name, arguments: args } = jsonrpcRequest.params || {};
-
-          if (!name) {
-            return res.status(400).json({
-              jsonrpc: '2.0',
-              error: {
-                code: -32602,
-                message: 'Invalid params - missing tool name',
-              },
-              id: jsonrpcRequest.id,
-            });
-          }
-
-          const tool = this.mcpServer.getTools().find((t) => t.name === name);
-          if (!tool) {
-            return res.status(404).json({
-              jsonrpc: '2.0',
-              error: {
-                code: -32601,
-                message: `Tool not found: ${name}`,
-              },
-              id: jsonrpcRequest.id,
-            });
-          }
-
-          try {
-            const result = await tool.handler(args || {});
-            return res.json({
-              jsonrpc: '2.0',
-              result: {
-                content: [
-                  {
-                    type: 'text',
-                    text: JSON.stringify(result, null, 2),
-                  },
-                ],
-              },
-              id: jsonrpcRequest.id,
-            });
-          } catch (error) {
-            logger.error({ tool: name, error }, 'Tool execution failed');
-            return res.status(500).json({
-              jsonrpc: '2.0',
-              error: {
-                code: -32603,
-                message: (error as Error).message || 'Tool execution failed',
-              },
-              id: jsonrpcRequest.id,
-            });
-          }
-        }
-
-        // Unknown method
-        return res.status(404).json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32601,
-            message: `Method not found: ${jsonrpcRequest.method}`,
-          },
-          id: jsonrpcRequest.id || null,
-        });
+        await transport.handleRequest(req, res, req.body);
       } catch (error) {
-        logger.error({ error }, 'MCP request processing failed');
-        return res.status(500).json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32603,
-            message: 'Internal error',
-          },
-          id: null,
-        });
+        logger.error({ error }, 'Streamable HTTP POST failed');
+        if (!res.headersSent) {
+          res.status(500).json({
+            jsonrpc: '2.0',
+            error: { code: -32603, message: 'Internal error' },
+            id: null,
+          });
+        }
       }
+    });
+
+    // GET: server -> client SSE stream for an existing session
+    this.app.get(path, authMiddleware, async (req: Request, res: Response) => {
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      const transport = sessionId ? this.streamableTransports.get(sessionId) : undefined;
+      if (!transport) {
+        res.status(400).send('Invalid or missing session ID');
+        return;
+      }
+      await transport.handleRequest(req, res);
+    });
+
+    // DELETE: terminate a session
+    this.app.delete(path, authMiddleware, async (req: Request, res: Response) => {
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      const transport = sessionId ? this.streamableTransports.get(sessionId) : undefined;
+      if (!transport) {
+        res.status(400).send('Invalid or missing session ID');
+        return;
+      }
+      await transport.handleRequest(req, res);
+    });
+  }
+
+  /**
+   * Legacy MCP transport: HTTP+SSE (protocol 2024-11-05).
+   * GET /sse opens the stream, POST /messages?sessionId=... delivers messages.
+   * Kept for older clients (e.g. some n8n versions) that don't speak Streamable HTTP.
+   */
+  private setupSseRoutes() {
+    const authMiddleware = createAuthMiddleware(this.config.authToken);
+
+    this.app.get('/sse', authMiddleware, async (_req: Request, res: Response) => {
+      const transport = new SSEServerTransport('/messages', res);
+      this.sseTransports.set(transport.sessionId, transport);
+      logger.info({ sessionId: transport.sessionId }, 'SSE session opened');
+
+      res.on('close', () => {
+        this.sseTransports.delete(transport.sessionId);
+        logger.info({ sessionId: transport.sessionId }, 'SSE session closed');
+      });
+
+      const server = this.mcpServer.createServer();
+      await server.connect(transport);
+    });
+
+    this.app.post('/messages', authMiddleware, async (req: Request, res: Response) => {
+      const sessionId = req.query.sessionId as string | undefined;
+      const transport = sessionId ? this.sseTransports.get(sessionId) : undefined;
+      if (!transport) {
+        res.status(400).send('No transport found for sessionId');
+        return;
+      }
+      await transport.handlePostMessage(req, res, req.body);
     });
   }
 

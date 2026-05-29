@@ -1,5 +1,4 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -19,32 +18,23 @@ import { registerJournalTools } from '../tools/journals.tools.js';
 import { registerReportTools } from '../tools/reports.tools.js';
 import { registerRawTools } from '../tools/raw.tools.js';
 
+const SERVER_INFO = {
+  name: 'siigo-mcp-server',
+  version: '1.0.0',
+};
+
 export interface MCPServerOptions {
   siigoClient: SiigoClient;
   enableWriteTools: boolean;
 }
 
 export class MCPServer {
-  private server: Server;
-  private tools: Map<string, any> = new Map();
+  private tools: Map<string, any> = new Map(); // eslint-disable-line @typescript-eslint/no-explicit-any
   private options: MCPServerOptions;
 
   constructor(options: MCPServerOptions) {
     this.options = options;
-    this.server = new Server(
-      {
-        name: 'siigo-mcp-server',
-        version: '1.0.0',
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-      }
-    );
-
     this.registerAllTools();
-    this.setupHandlers();
   }
 
   private registerAllTools() {
@@ -65,9 +55,20 @@ export class MCPServer {
     logger.info({ toolCount: this.tools.size }, 'MCP tools registered');
   }
 
-  private setupHandlers() {
+  /**
+   * Create a fresh SDK Server instance wired to the registered tools.
+   * One instance is created per transport/session (Streamable HTTP and SSE)
+   * to avoid cross-session state.
+   */
+  createServer(): Server {
+    const server = new Server(SERVER_INFO, {
+      capabilities: {
+        tools: {},
+      },
+    });
+
     // List tools handler
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
       const toolsList = Array.from(this.tools.values()).map((tool) => ({
         name: tool.name,
         description: tool.description,
@@ -79,7 +80,7 @@ export class MCPServer {
     });
 
     // Call tool handler
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
       logger.info({ tool: name }, 'Calling tool');
@@ -104,19 +105,15 @@ export class MCPServer {
         throw error;
       }
     });
-  }
 
-  async runStdio() {
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
-    logger.info('MCP server running on stdio');
-  }
-
-  getServer() {
-    return this.server;
+    return server;
   }
 
   getTools() {
     return Array.from(this.tools.values());
+  }
+
+  getSiigoClient(): SiigoClient {
+    return this.options.siigoClient;
   }
 }
