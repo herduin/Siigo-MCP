@@ -147,9 +147,10 @@ docker-compose down
 1. **Install n8n MCP Client Tool** (if not already installed)
 
 2. **Add MCP Server in n8n workflow:**
-   - Add "MCP Client" node to your workflow
+   - Add "MCP Client Tool" node to your workflow
    - Configure connection:
-     - **URL**: `http://your-server:3230/mcp`
+     - **Server Transport**: `HTTP Streamable` (recommended) — or `Server Sent Events (SSE)` for older clients
+     - **URL**: `http://your-server:3230/mcp` (Streamable HTTP) — or `http://your-server:3230/sse` (SSE)
      - **Authentication**: Bearer Token (if `MCP_AUTH_TOKEN` is set)
      - **Token**: Your configured `MCP_AUTH_TOKEN`
 
@@ -235,7 +236,8 @@ The AI agent can now:
 - `GET /health` - Health check (returns 200 OK)
 - `GET /ready` - Readiness check (tests Siigo connectivity)
 - `GET /version` - Server version and info
-- `POST /mcp` - MCP endpoint (JSON-RPC 2.0)
+- `POST|GET|DELETE /mcp` - MCP **Streamable HTTP** transport (session via `Mcp-Session-Id` header)
+- `GET /sse` + `POST /messages?sessionId=...` - MCP **SSE** legacy transport
 
 ## 🧪 Testing
 
@@ -280,11 +282,11 @@ npm run typecheck
 
 1. **Pull Image:**
    - Go to **Images**
-   - Pull: `ghcr.io/herduin/siigo-mcp-server:latest`
+   - Pull: `ghcr.io/herduin/siigo-mcp:latest`
 
 2. **Create Container:**
    - Name: `siigo-mcp-server`
-   - Image: `ghcr.io/herduin/siigo-mcp-server:latest`
+   - Image: `ghcr.io/herduin/siigo-mcp:latest`
    - Port mapping: `3230:3230`
    - Environment variables: (add from table above)
    - Restart policy: `unless-stopped`
@@ -300,20 +302,20 @@ The GitHub Actions workflow automatically builds and publishes Docker images on:
 ### Pulling Published Image
 
 ```bash
-docker pull ghcr.io/herduin/siigo-mcp-server:latest
+docker pull ghcr.io/herduin/siigo-mcp:latest
 ```
 
 ### Manual Publishing
 
 ```bash
 # Build image
-docker build -t ghcr.io/herduin/siigo-mcp-server:latest .
+docker build -t ghcr.io/herduin/siigo-mcp:latest .
 
 # Login to GitHub Container Registry
 echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 
 # Push image
-docker push ghcr.io/herduin/siigo-mcp-server:latest
+docker push ghcr.io/herduin/siigo-mcp:latest
 ```
 
 ## 🔍 Troubleshooting
@@ -347,20 +349,27 @@ docker push ghcr.io/herduin/siigo-mcp-server:latest
 
 ### MCP Integration Issues
 
-1. **Test JSON-RPC initialize:**
+The MCP endpoint uses the Streamable HTTP transport, so requests must accept
+both JSON and SSE (`Accept: application/json, text/event-stream`) and reuse the
+`Mcp-Session-Id` returned by `initialize`.
+
+1. **Initialize a session** (returns the `Mcp-Session-Id` response header):
    ```bash
-   curl -X POST http://localhost:3230/mcp \
+   curl -i -X POST http://localhost:3230/mcp \
      -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
      -H "Authorization: Bearer YOUR_TOKEN" \
-     -d '{"jsonrpc":"2.0","method":"initialize","id":1}'
+     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
    ```
 
-2. **List available tools:**
+2. **List available tools** (reuse the session id):
    ```bash
    curl -X POST http://localhost:3230/mcp \
      -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
      -H "Authorization: Bearer YOUR_TOKEN" \
-     -d '{"jsonrpc":"2.0","method":"tools/list","id":2}'
+     -H "Mcp-Session-Id: SESSION_ID_FROM_STEP_1" \
+     -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
    ```
 
 ## 🤝 Contributing

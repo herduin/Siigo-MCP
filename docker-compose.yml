@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   siigo-mcp:
-    image: ghcr.io/herduin/siigo-mcp-server:latest
+    image: ghcr.io/herduin/siigo-mcp:latest
     container_name: siigo-mcp-server
     restart: unless-stopped
     ports:
@@ -28,10 +28,6 @@ services:
 
       # Security
       ENABLE_WRITE_TOOLS: "${ENABLE_WRITE_TOOLS:-false}"
-
-      # Rate Limiting
-      RATE_LIMIT_WINDOW_MS: "${RATE_LIMIT_WINDOW_MS:-60000}"
-      RATE_LIMIT_MAX_REQUESTS: "${RATE_LIMIT_MAX_REQUESTS:-100}"
 
       # Request Limits
       MAX_PAYLOAD_SIZE: "${MAX_PAYLOAD_SIZE:-10mb}"

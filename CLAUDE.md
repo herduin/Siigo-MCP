@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-MCP (Model Context Protocol) server that exposes the Siigo Colombia accounting/invoicing API to AI agents and n8n. Transport is **HTTP + JSON-RPC 2.0** (not stdio). TypeScript ESM, Node 20+.
+MCP (Model Context Protocol) server that exposes the Siigo Colombia accounting/invoicing API to AI agents and n8n. Transport is **HTTP** using the official MCP SDK transports — **Streamable HTTP** (`/mcp`) and **SSE legacy** (`/sse` + `/messages`). TypeScript ESM, Node 20+.
 
 ## Commands
 
@@ -32,13 +32,16 @@ Layered, with three concerns kept separate: HTTP/transport → MCP tool registry
 
 **Boot flow** (`src/index.ts`): builds config from env → `SiigoClient` (fails fast on a `healthCheck` that just fetches an auth token) → `MCPServer` (registers tools) → `HttpServer` (Express) → `start()`.
 
-### Transport gotcha — two MCP server paths, only one runs
+### Transport wiring
 
-`src/server/mcpServer.ts` constructs the official `@modelcontextprotocol/sdk` `Server` with `CallToolRequestSchema`/`ListToolsRequestSchema` handlers and a `runStdio()` method. **None of this executes at runtime.** `index.ts` never calls `runStdio()`. Instead `HttpServer` (`src/server/httpServer.ts`) re-implements the JSON-RPC protocol by hand — it reads `mcpServer.getTools()` directly and dispatches `initialize` / `tools/list` / `tools/call` itself. So:
+`src/server/mcpServer.ts` is a **tool container + Server factory**. `registerAllTools()` fills a `Map` of tools once; `createServer()` returns a fresh `@modelcontextprotocol/sdk` `Server` wired with `ListToolsRequestSchema`/`CallToolRequestSchema` handlers that read that map. `getTools()` feeds `/ready` and `/version`; `getSiigoClient()` feeds `/ready`.
 
-- The SDK `Server` instance is effectively dead code; the live behavior is in `httpServer.ts`.
-- `MCPServer` is used at runtime only as a **tool container** (`getTools()`, `getServer`, and `options.siigoClient` accessed via bracket notation in `/ready`).
-- When changing how tools are listed or invoked, edit `httpServer.ts`. The handlers in `mcpServer.ts` won't affect the running server.
+`src/server/httpServer.ts` mounts the SDK transports on Express and calls `mcpServer.createServer()` **once per session** (one `Server` per transport, to avoid cross-session state):
+
+- **Streamable HTTP** on `MCP_PATH` (default `/mcp`): `POST` bootstraps a session on `initialize` (creates a `StreamableHTTPServerTransport` with a UUID `sessionIdGenerator`, tracked in `streamableTransports` by `Mcp-Session-Id`), `GET` opens the server→client SSE stream, `DELETE` closes it.
+- **SSE legacy**: `GET /sse` opens a stream (`SSEServerTransport`, tracked in `sseTransports` by `sessionId`), `POST /messages?sessionId=...` delivers client messages.
+
+Both transport groups sit behind the same `createAuthMiddleware`. DNS-rebinding protection is left off (SDK default), so the Cloudflare tunnel's rewritten `Host` is accepted. To change tool listing/calling behavior, edit the handlers in `createServer()`; transport/session plumbing lives in `httpServer.ts`.
 
 ### Tool registration pattern
 
@@ -73,7 +76,7 @@ Note `inputSchema` (JSON Schema, advertised to clients) and the Zod schema in `s
 
 ### HTTP endpoints
 
-`GET /health` (liveness), `GET /ready` (calls `siigoClient.healthCheck()`), `GET /version`, `POST {MCP_PATH}` (default `/mcp`, JSON-RPC, behind optional Bearer auth). Auth is enforced by `createAuthMiddleware` only when `MCP_AUTH_TOKEN` is set; otherwise it's a passthrough.
+`GET /health` (liveness), `GET /ready` (calls `siigoClient.healthCheck()`), `GET /version`, `POST|GET|DELETE {MCP_PATH}` (default `/mcp`, Streamable HTTP), `GET /sse` + `POST /messages` (SSE legacy). The MCP routes sit behind optional Bearer auth — `createAuthMiddleware` enforces it only when `MCP_AUTH_TOKEN` is set; otherwise it's a passthrough.
 
 ## Conventions
 
