@@ -17,11 +17,20 @@ import { registerCreditNoteTools } from '../tools/creditNotes.tools.js';
 import { registerJournalTools } from '../tools/journals.tools.js';
 import { registerReportTools } from '../tools/reports.tools.js';
 import { registerRawTools } from '../tools/raw.tools.js';
+import { registerMetaTools } from '../tools/meta.tools.js';
 
 const SERVER_INFO = {
   name: 'siigo-mcp-server',
   version: '1.0.0',
 };
+
+const SERVER_INSTRUCTIONS =
+  'Servidor MCP de la API de Siigo (contabilidad/facturación Colombia). ' +
+  'IMPORTANTE: al conectarte, invoca primero la herramienta `siigo_list_tools` para obtener el catálogo ' +
+  'completo de herramientas disponibles agrupadas por dominio, con un resumen de qué hace cada una. ' +
+  'Cada herramienta declara su contrato exacto en `inputSchema` (entradas) y `outputSchema` (salidas). ' +
+  'Convenciones: las fechas usan formato YYYY-MM-DD; la paginación usa `page` y `page_size`; ' +
+  'los listados devuelven `{ pagination, results, _links }` y toda respuesta viene envuelta en `{ success, data }`.';
 
 export interface MCPServerOptions {
   siigoClient: SiigoClient;
@@ -51,6 +60,7 @@ export class MCPServer {
     registerJournalTools(this.tools, siigoClient);
     registerReportTools(this.tools, siigoClient);
     registerRawTools(this.tools, siigoClient);
+    registerMetaTools(this.tools);
 
     logger.info({ toolCount: this.tools.size }, 'MCP tools registered');
   }
@@ -65,6 +75,7 @@ export class MCPServer {
       capabilities: {
         tools: {},
       },
+      instructions: SERVER_INSTRUCTIONS,
     });
 
     // List tools handler
@@ -73,6 +84,7 @@ export class MCPServer {
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,
+        ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
       }));
 
       logger.debug({ count: toolsList.length }, 'Listing tools');

@@ -1,6 +1,7 @@
 import { SiigoClient } from '../siigo/siigoClient.js';
 import { validateInput } from '../utils/validation.js';
 import { rawRequestSchema } from '../schemas/common.schemas.js';
+import { envelope } from '../schemas/output.schemas.js';
 import logger from '../utils/logger.js';
 
 export function registerRawTools(tools: Map<string, any>, client: SiigoClient) {
@@ -8,11 +9,19 @@ export function registerRawTools(tools: Map<string, any>, client: SiigoClient) {
   tools.set('siigo_health_check', {
     name: 'siigo_health_check',
     description:
-      'Check health and connectivity to Siigo API. Returns authentication status and API availability. Use this to diagnose connection issues.',
+      'Verifica la conectividad y autenticación con la API de Siigo. Sin parámetros. SALIDA: { apiAvailable, authentication: { hasToken, expiresIn, isExpired }, timestamp }. Úsala para diagnosticar problemas de conexión.',
     inputSchema: {
       type: 'object',
       properties: {},
     },
+    outputSchema: envelope({
+      type: 'object',
+      properties: {
+        apiAvailable: { type: 'boolean', description: 'Si la API de Siigo respondió.' },
+        authentication: { type: 'object', description: 'Estado del token (hasToken, expiresIn, isExpired).' },
+        timestamp: { type: 'string', description: 'Marca de tiempo ISO 8601.' },
+      },
+    }),
     handler: async () => {
       logger.info('Performing health check');
 
@@ -46,11 +55,20 @@ export function registerRawTools(tools: Map<string, any>, client: SiigoClient) {
   tools.set('siigo_get_token_status', {
     name: 'siigo_get_token_status',
     description:
-      'Get current authentication token status including expiration time. Useful for AI agents monitoring API connectivity.',
+      'Obtiene el estado del token de autenticación actual (incluye expiración). Sin parámetros. SALIDA: { hasToken, expiresIn, isExpired, timestamp }.',
     inputSchema: {
       type: 'object',
       properties: {},
     },
+    outputSchema: envelope({
+      type: 'object',
+      properties: {
+        hasToken: { type: 'boolean' },
+        expiresIn: { type: ['number', 'null'], description: 'Segundos hasta expirar.' },
+        isExpired: { type: 'boolean' },
+        timestamp: { type: 'string' },
+      },
+    }),
     handler: async () => {
       logger.info('Getting token status');
 
@@ -70,17 +88,21 @@ export function registerRawTools(tools: Map<string, any>, client: SiigoClient) {
   tools.set('siigo_raw_request', {
     name: 'siigo_raw_request',
     description:
-      'Make a raw HTTP request to any Siigo API endpoint. Provides flexibility for AI agents to access endpoints not covered by specific tools. Use with caution - requires knowledge of Siigo API.',
+      'Hace una petición HTTP cruda a cualquier endpoint de la API de Siigo. Da flexibilidad para acceder a endpoints no cubiertos por tools específicas (recuerda los nombres reales de Siigo: page_size, created_start, etc.). SALIDA: { success, data } con la respuesta cruda del endpoint, o { success:false, error }.',
     inputSchema: {
       type: 'object',
       properties: {
-        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'], description: 'HTTP method' },
-        endpoint: { type: 'string', description: 'API endpoint path (e.g., /v1/customers)' },
-        data: { type: 'object', description: 'Request body (for POST/PUT)' },
-        params: { type: 'object', description: 'Query parameters' },
+        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'], description: 'Método HTTP.' },
+        endpoint: { type: 'string', description: 'Ruta del endpoint (ej. /v1/customers).' },
+        data: { type: 'object', description: 'Cuerpo de la petición (para POST/PUT).' },
+        params: { type: 'object', description: 'Parámetros de query (usa los nombres reales de Siigo).' },
       },
       required: ['method', 'endpoint'],
     },
+    outputSchema: envelope(
+      { description: 'Respuesta cruda del endpoint solicitado (estructura variable).' },
+      'Respuesta cruda de Siigo.'
+    ),
     handler: async (args: any) => {
       const params = validateInput(rawRequestSchema, args);
       logger.info({ method: params.method, endpoint: params.endpoint }, 'Making raw request');
