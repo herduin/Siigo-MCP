@@ -27,8 +27,10 @@ export interface MCPServerOptions {
 export class MCPServer {
   private server: Server;
   private tools: Map<string, any> = new Map();
+  private options: MCPServerOptions;
 
-  constructor(private options: MCPServerOptions) {
+  constructor(options: MCPServerOptions) {
+    this.options = options;
     this.server = new Server(
       {
         name: 'siigo-mcp-server',
@@ -46,7 +48,7 @@ export class MCPServer {
   }
 
   private registerAllTools() {
-    const { siigoClient, enableWriteTools } = this.options;
+    const { siigoClient, enableWriteTools } = this.options; // eslint-disable-line @typescript-eslint/no-unused-vars
 
     // Register all tool categories
     registerCustomerTools(this.tools, siigoClient, enableWriteTools);

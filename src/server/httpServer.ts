@@ -63,7 +63,7 @@ export class HttpServer {
             timestamp: new Date().toISOString(),
           });
         }
-      } catch (error) {
+      } catch {
         res.status(503).json({
           status: 'not ready',
           error: 'health check failed',

@@ -9,9 +9,9 @@ import {
 import logger from '../utils/logger.js';
 
 export function registerInvoiceTools(
-  tools: Map<string, any>,
+  tools: Map<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
   client: SiigoClient,
-  _enableWrite: boolean
+  _enableWrite: boolean // eslint-disable-line @typescript-eslint/no-unused-vars
 ) {
   // List invoices
   tools.set('siigo_list_invoices', {

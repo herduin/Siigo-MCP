@@ -9,12 +9,12 @@ export function createAuthMiddleware(authToken?: string) {
 
   logger.info('MCP auth enabled');
 
-  return (req: Request, res: Response, next: NextFunction) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
     const authorization = req.headers.authorization;
 
     if (!authorization) {
       logger.warn('Request missing authorization header');
-      return res.status(401).json({
+      res.status(401).json({
         jsonrpc: '2.0',
         error: {
           code: -32001,
@@ -22,12 +22,13 @@ export function createAuthMiddleware(authToken?: string) {
         },
         id: null,
       });
+      return;
     }
 
     const expectedBearer = `Bearer ${authToken}`;
     if (authorization !== expectedBearer) {
       logger.warn('Invalid authorization token');
-      return res.status(401).json({
+      res.status(401).json({
         jsonrpc: '2.0',
         error: {
           code: -32001,
@@ -35,6 +36,7 @@ export function createAuthMiddleware(authToken?: string) {
         },
         id: null,
       });
+      return;
     }
 
     next();

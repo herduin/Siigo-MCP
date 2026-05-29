@@ -21,9 +21,6 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install wget for healthcheck
-RUN apk add --no-cache wget
-
 # Copy package files
 COPY package*.json ./
 
@@ -46,9 +43,9 @@ USER nodejs
 # Expose port
 EXPOSE 3230
 
-# Health check
+# Health check using node directly
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD wget -qO- http://localhost:3230/health || exit 1
+    CMD node -e "require('http').get('http://localhost:3230/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
 # Start server
 CMD ["node", "dist/index.js"]

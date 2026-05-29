@@ -2,12 +2,12 @@ import { z } from 'zod';
 import logger from './logger.js';
 
 export class ValidationError extends Error {
-  constructor(
-    message: string,
-    public errors: z.ZodError
-  ) {
+  public errors: z.ZodError;
+
+  constructor(message: string, errors: z.ZodError) {
     super(message);
     this.name = 'ValidationError';
+    this.errors = errors;
   }
 }
 
