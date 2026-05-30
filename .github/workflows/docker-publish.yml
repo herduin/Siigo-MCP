@@ -80,6 +80,8 @@ jobs:
           ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
         run: |
           set -euo pipefail
+          # Espera previa para asegurar disponibilidad del endpoint antes de llamar a Portainer
+          sleep 5
           # Normaliza la base: quita '/' final y un sufijo '/api' si viene incluido
           BASE="${PORTAINER_URL%/}"; BASE="${BASE%/api}"
           api() { curl -sS -H "X-API-Key: $PORTAINER_API_KEY" "$@"; }
