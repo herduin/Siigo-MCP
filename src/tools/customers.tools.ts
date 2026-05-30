@@ -5,14 +5,18 @@ import {
   listCustomersSchema,
   searchCustomersSchema,
   getCustomerSchema,
+  createCustomerSchema,
+  updateCustomerSchema,
+  idParamSchema,
 } from '../schemas/siigo.schemas.js';
 import { paginated, single, customerSchema } from '../schemas/output.schemas.js';
+import { WRITE, DESTRUCTIVE, run } from './_helpers.js';
 import logger from '../utils/logger.js';
 
 export function registerCustomerTools(
   tools: Map<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
   client: SiigoClient,
-  _enableWrite: boolean // eslint-disable-line @typescript-eslint/no-unused-vars
+  enableWrite = false
 ) {
   // List customers
   tools.set('siigo_list_customers', {
@@ -84,5 +88,59 @@ export function registerCustomerTools(
       const result = await client.get(SIIGO_ENDPOINTS.CUSTOMERS, { params });
       return { success: true, data: result };
     },
+  });
+
+  if (!enableWrite) return;
+
+  // Create customer
+  tools.set('siigo_create_customer', {
+    name: 'siigo_create_customer',
+    description:
+      'Crea un cliente/tercero en Siigo. Recibe el objeto `customer` con la estructura del API (person_type, id_type, identification, name[], address, phones[], etc.). Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: { customer: { type: 'object', description: 'Datos del cliente (ver siigoapi.apib).' } },
+      required: ['customer'],
+    },
+    outputSchema: single(customerSchema, 'Cliente creado.'),
+    annotations: WRITE,
+    handler: (args: any) =>
+      run(createCustomerSchema, args, 'Creating customer', ({ customer }) =>
+        client.post(SIIGO_ENDPOINTS.CUSTOMERS, customer)
+      ),
+  });
+
+  // Update customer
+  tools.set('siigo_update_customer', {
+    name: 'siigo_update_customer',
+    description: 'Actualiza un cliente/tercero existente por su ID. Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'ID (GUID) del cliente.' },
+        customer: { type: 'object', description: 'Datos a actualizar.' },
+      },
+      required: ['id', 'customer'],
+    },
+    outputSchema: single(customerSchema, 'Cliente actualizado.'),
+    annotations: WRITE,
+    handler: (args: any) =>
+      run(updateCustomerSchema, args, 'Updating customer', ({ id, customer }) =>
+        client.put(SIIGO_ENDPOINTS.CUSTOMER(id), customer)
+      ),
+  });
+
+  // Delete customer
+  tools.set('siigo_delete_customer', {
+    name: 'siigo_delete_customer',
+    description: 'Elimina un cliente/tercero. Operación destructiva. Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'ID (GUID) del cliente.' } },
+      required: ['id'],
+    },
+    annotations: DESTRUCTIVE,
+    handler: (args: any) =>
+      run(idParamSchema, args, 'Deleting customer', ({ id }) => client.delete(SIIGO_ENDPOINTS.CUSTOMER(id))),
   });
 }

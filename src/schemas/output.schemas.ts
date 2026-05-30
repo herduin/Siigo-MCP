@@ -335,3 +335,117 @@ export const userSchema: JsonSchema = {
     identification: { type: 'string', description: 'Número de identificación.' },
   },
 };
+
+// --- Recursos adicionales ----------------------------------------------------
+
+export const purchaseSchema: JsonSchema = {
+  type: 'object',
+  description: 'Factura de compra / gasto.',
+  properties: {
+    id: { type: 'string', description: 'Identificador (GUID).' },
+    document: documentRef,
+    number: { type: 'number', description: 'Consecutivo.' },
+    name: { type: 'string', description: 'Tipo + código + número (ej. FC-3-1328).' },
+    date: { type: 'string', description: 'Fecha (YYYY-MM-DD).' },
+    supplier: { type: 'object', description: 'Proveedor (id, identification, branch_office).' },
+    provider_invoice: { type: 'object', description: 'Factura del proveedor (prefix, number).' },
+    cost_center: { type: 'number', description: 'Centro de costo.' },
+    total: { type: 'number', description: 'Total de la compra.' },
+    balance: { type: 'number', description: 'Saldo pendiente de pago.' },
+    discount_type: { type: 'string' },
+    items: { type: 'array', items: itemOut, description: 'Conceptos/cuentas del gasto.' },
+    observations: { type: 'string' },
+    metadata,
+  },
+};
+
+export const quotationSchema: JsonSchema = {
+  type: 'object',
+  description: 'Cotización.',
+  properties: {
+    id: { type: 'string', description: 'Identificador (GUID).' },
+    document: documentRef,
+    number: { type: 'number', description: 'Consecutivo.' },
+    name: { type: 'string', description: 'Tipo + código + número (ej. C-1-22).' },
+    date: { type: 'string', description: 'Fecha (YYYY-MM-DD).' },
+    customer: { type: 'object', description: 'Cliente asociado.' },
+    seller: { type: 'number', description: 'ID del vendedor.' },
+    total: { type: 'number' },
+    items: { type: 'array', items: itemOut },
+    metadata,
+  },
+};
+
+export const supportDocumentSchema: JsonSchema = {
+  type: 'object',
+  description: 'Documento soporte (compra a no obligados a facturar).',
+  properties: {
+    id: { type: 'string', description: 'Identificador (GUID).' },
+    document: documentRef,
+    number: { type: 'number' },
+    name: { type: 'string' },
+    date: { type: 'string', description: 'Fecha (YYYY-MM-DD).' },
+    supplier: { type: 'object', description: 'Proveedor.' },
+    total: { type: 'number' },
+    balance: { type: 'number' },
+    items: { type: 'array', items: itemOut },
+    metadata,
+  },
+};
+
+export const accountGroupSchema: JsonSchema = {
+  type: 'object',
+  description: 'Categoría / grupo de inventario.',
+  properties: {
+    id: { type: 'number', description: 'Identificador único.' },
+    name: { type: 'string', description: 'Nombre de la categoría.' },
+    active: { type: 'boolean', description: 'Estado.' },
+  },
+};
+
+export const warehouseSchema: JsonSchema = {
+  type: 'object',
+  description: 'Bodega.',
+  properties: {
+    id: { type: 'number' },
+    name: { type: 'string' },
+    active: { type: 'boolean' },
+    has_movements: { type: 'boolean' },
+  },
+};
+
+export const priceListSchema: JsonSchema = {
+  type: 'object',
+  description: 'Lista de precio.',
+  properties: {
+    id: { type: 'number' },
+    name: { type: 'string' },
+    position: { type: 'number' },
+    active: { type: 'boolean' },
+  },
+};
+
+export const fixedAssetSchema: JsonSchema = {
+  type: 'object',
+  description: 'Activo fijo.',
+  properties: {
+    id: { type: 'number' },
+    name: { type: 'string' },
+    group: { type: 'object' },
+    active: { type: 'boolean' },
+  },
+};
+
+export const webhookSchema: JsonSchema = {
+  type: 'object',
+  description: 'Webhook configurado.',
+  properties: {
+    id: { type: 'string' },
+    url: { type: 'string' },
+    application_id: { type: 'string' },
+    company_key: { type: 'string' },
+  },
+};
+
+// Catálogos simples (estructura variable) — objeto genérico
+export const genericObject: JsonSchema = { type: 'object', description: 'Registro del catálogo.' };

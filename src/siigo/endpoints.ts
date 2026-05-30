@@ -12,10 +12,25 @@ export const SIIGO_ENDPOINTS = {
   INVOICE_PDF: (id: string) => `/v1/invoices/${id}/pdf`,
   INVOICE_XML: (id: string) => `/v1/invoices/${id}/xml`,
   INVOICE_STAMP_ERRORS: (id: string) => `/v1/invoices/${id}/stamp/errors`,
+  INVOICE_ANNUL: (id: string) => `/v1/invoices/${id}/annul`,
+  INVOICE_MAIL: (id: string) => `/v1/invoices/${id}/mail`,
+  INVOICES_BATCH: '/v1/invoices/batch',
 
   // Products
   PRODUCTS: '/v1/products',
   PRODUCT: (id: string) => `/v1/products/${id}`,
+
+  // Quotations
+  QUOTATIONS: '/v1/quotations',
+  QUOTATION: (id: string) => `/v1/quotations/${id}`,
+
+  // Purchases (facturas de compra / gasto)
+  PURCHASES: '/v1/purchases',
+  PURCHASE: (id: string) => `/v1/purchases/${id}`,
+
+  // Purchase support documents (documento soporte)
+  SUPPORT_DOCS: '/v1/purchase-support-documents',
+  SUPPORT_DOC: (id: string) => `/v1/purchase-support-documents/${id}`,
 
   // Taxes
   TAXES: '/v1/taxes',
@@ -52,7 +67,22 @@ export const SIIGO_ENDPOINTS = {
 
   // Account Groups — Categorías de inventario
   ACCOUNT_GROUPS: '/v1/account-groups',
+  ACCOUNT_GROUP: (id: number) => `/v1/account-groups/${id}`,
 
-  // Warehouses
+  // Catalogs
   WAREHOUSES: '/v1/warehouses',
+  PRICE_LISTS: '/v1/price-lists',
+  CITIES: '/v1/cities',
+  ID_TYPES: '/v1/id-types',
+  FISCAL_RESPONSIBILITIES: '/v1/fiscal-responsibilities',
+  FIXED_ASSETS: '/v1/fixed-assets',
+
+  // Webhooks
+  WEBHOOKS: '/v1/webhooks',
+  WEBHOOK: (id: string) => `/v1/webhooks/${id}`,
+
+  // Accounting reports
+  TRIAL_BALANCE: '/v1/test-balance-report',
+  TRIAL_BALANCE_BY_THIRD: '/v1/test-balance-report-by-thirdparty',
+  ACCOUNTS_PAYABLE: '/v1/accounts-payable',
 } as const;

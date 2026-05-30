@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { SiigoClient } from '../siigo/siigoClient.js';
 import { SIIGO_ENDPOINTS } from '../siigo/endpoints.js';
 import { validateInput } from '../utils/validation.js';
@@ -7,8 +8,16 @@ import {
   customerStatementSchema,
   accountsReceivableAgingSchema,
   monthlyRevenueReportSchema,
+  trialBalanceSchema,
+  trialBalanceByThirdSchema,
+  accountsPayableSchema,
+  profitAndLossSchema,
+  expensesByPeriodSchema,
+  topProductsSchema,
 } from '../schemas/siigo.schemas.js';
-import { envelope } from '../schemas/output.schemas.js';
+import { envelope, genericObject } from '../schemas/output.schemas.js';
+import { RO, run } from './_helpers.js';
+import { parseXlsxRows, buildProfitAndLoss } from '../utils/xlsx.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -430,4 +439,220 @@ export function registerReportTools(tools: Map<string, any>, client: SiigoClient
       };
     },
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Reportes contables de Siigo
+  // ═══════════════════════════════════════════════════════════════════════
+
+  tools.set('siigo_get_trial_balance', {
+    name: 'siigo_get_trial_balance',
+    description:
+      'Genera el balance de prueba general (Excel) para un rango de meses. SALIDA: { file_id, file_url } con la URL del Excel. Para un P&L ya estructurado usa siigo_profit_and_loss.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        year: { type: 'number', description: 'Año.' },
+        month_start: { type: 'number', description: 'Mes inicial (1-13).' },
+        month_end: { type: 'number', description: 'Mes final (1-13).' },
+        includes_tax_difference: { type: 'boolean', description: 'Incluir diferencias de impuestos.' },
+        account_start: { type: 'string', description: 'Cuenta inicial (opcional).' },
+        account_end: { type: 'string', description: 'Cuenta final (opcional).' },
+      },
+      required: ['year', 'month_start', 'month_end'],
+    },
+    outputSchema: envelope(genericObject, 'Referencia al Excel generado ({ file_id, file_url }).'),
+    annotations: RO,
+    handler: (args: any) =>
+      run(trialBalanceSchema, args, 'Trial balance', (p) => client.post(SIIGO_ENDPOINTS.TRIAL_BALANCE, p)),
+  });
+
+  tools.set('siigo_get_trial_balance_by_third', {
+    name: 'siigo_get_trial_balance_by_third',
+    description:
+      'Genera el balance de prueba por tercero (Excel) para un rango de meses, opcionalmente filtrado por cliente. SALIDA: { file_id, file_url }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        year: { type: 'number', description: 'Año.' },
+        month_start: { type: 'number', description: 'Mes inicial (1-13).' },
+        month_end: { type: 'number', description: 'Mes final (1-13).' },
+        includes_tax_difference: { type: 'boolean', description: 'Incluir diferencias de impuestos.' },
+        account_start: { type: 'string', description: 'Cuenta inicial (opcional).' },
+        account_end: { type: 'string', description: 'Cuenta final (opcional).' },
+        customer: {
+          type: 'object',
+          description: 'Filtro por cliente: { identification, branch_office? }.',
+        },
+      },
+      required: ['year', 'month_start', 'month_end'],
+    },
+    outputSchema: envelope(genericObject, 'Referencia al Excel generado.'),
+    annotations: RO,
+    handler: (args: any) =>
+      run(trialBalanceByThirdSchema, args, 'Trial balance by third', (p) =>
+        client.post(SIIGO_ENDPOINTS.TRIAL_BALANCE_BY_THIRD, p)
+      ),
+  });
+
+  tools.set('siigo_get_accounts_payable', {
+    name: 'siigo_get_accounts_payable',
+    description:
+      'Obtiene el reporte de cuentas por pagar (cartera de proveedores), paginado. SALIDA: objeto paginado con los saldos por proveedor.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'number', description: 'Número de página (default: 1).' },
+        page_size: { type: 'number', description: 'Tamaño de página (default: 25, máx: 100).' },
+      },
+    },
+    outputSchema: envelope(genericObject, 'Cuentas por pagar (paginado).'),
+    annotations: RO,
+    handler: (args: any) =>
+      run(accountsPayableSchema, args, 'Accounts payable', (p) =>
+        client.get(SIIGO_ENDPOINTS.ACCOUNTS_PAYABLE, { params: p })
+      ),
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Reportes de valor agregado del MCP (no existen en la API cruda)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  tools.set('siigo_profit_and_loss', {
+    name: 'siigo_profit_and_loss',
+    description:
+      'Estado de Resultados (P&L) ya estructurado para un rango de meses del año. Internamente genera el balance de prueba, descarga el Excel y lo procesa según el PUC (clase 4 ingresos, 5 gastos, 6/7 costos). SALIDA: { company, period, income, costOfSales, productionCost, expenses, netProfit, netMarginPct, incomeByGroup[], expensesByGroup[] }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        year: { type: 'number', description: 'Año (ej. 2026).' },
+        month_start: { type: 'number', description: 'Mes inicial (1-12, default 1).' },
+        month_end: { type: 'number', description: 'Mes final (1-12).' },
+      },
+      required: ['year', 'month_end'],
+    },
+    outputSchema: envelope(genericObject, 'Estado de resultados estructurado.'),
+    annotations: RO,
+    handler: (args: any) =>
+      run(profitAndLossSchema, args, 'Profit and loss', async (p) => {
+        const report: any = await client.post(SIIGO_ENDPOINTS.TRIAL_BALANCE, {
+          year: p.year,
+          month_start: p.month_start,
+          month_end: p.month_end,
+          includes_tax_difference: false,
+        });
+        const url = report?.file_url;
+        if (!url) throw new Error('Siigo no devolvió file_url para el balance de prueba');
+        const xlsx = await axios.get<ArrayBuffer>(url, { responseType: 'arraybuffer' });
+        const rows = parseXlsxRows(new Uint8Array(xlsx.data));
+        return buildProfitAndLoss(rows);
+      }),
+  });
+
+  tools.set('siigo_expenses_by_period', {
+    name: 'siigo_expenses_by_period',
+    description:
+      'Resumen de gastos (facturas de compra) en un rango de fechas, agregado por proveedor y por concepto/cuenta. SALIDA: { period, total, count, byProvider[], byConcept[] }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        startDate: { type: 'string', description: 'Fecha inicio (YYYY-MM-DD).' },
+        endDate: { type: 'string', description: 'Fecha fin (YYYY-MM-DD).' },
+      },
+      required: ['startDate', 'endDate'],
+    },
+    outputSchema: envelope(genericObject, 'Gastos agregados por proveedor y concepto.'),
+    annotations: RO,
+    handler: (args: any) =>
+      run(expensesByPeriodSchema, args, 'Expenses by period', async (p) => {
+        const rows = await fetchAllPages(client, SIIGO_ENDPOINTS.PURCHASES, {
+          created_start: p.startDate,
+          created_end: p.endDate,
+        });
+        const byProvider: Record<string, { total: number; count: number }> = {};
+        const byConcept: Record<string, number> = {};
+        let total = 0;
+        for (const pu of rows) {
+          total += pu.total || 0;
+          const nit = pu.supplier?.identification || '?';
+          byProvider[nit] = byProvider[nit] || { total: 0, count: 0 };
+          byProvider[nit].total += pu.total || 0;
+          byProvider[nit].count += 1;
+          for (const it of pu.items || []) {
+            const key = `${it.code || ''}|${(it.description || '').split('\n')[0]}`;
+            byConcept[key] = (byConcept[key] || 0) + (it.total || 0);
+          }
+        }
+        return {
+          period: { startDate: p.startDate, endDate: p.endDate },
+          total,
+          count: rows.length,
+          byProvider: Object.entries(byProvider)
+            .map(([identification, v]) => ({ identification, ...v }))
+            .sort((a, b) => b.total - a.total),
+          byConcept: Object.entries(byConcept)
+            .map(([k, value]) => ({ code: k.split('|')[0], concept: k.split('|')[1], value }))
+            .sort((a, b) => b.value - a.value),
+        };
+      }),
+  });
+
+  tools.set('siigo_top_products', {
+    name: 'siigo_top_products',
+    description:
+      'Ranking de productos más vendidos en un rango de fechas (a partir de los ítems de las facturas de venta). Parámetros: startDate, endDate, limit (default 10), by ("value" o "quantity"). SALIDA: { period, by, products[] } con quantity, total y count por producto.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        startDate: { type: 'string', description: 'Fecha inicio (YYYY-MM-DD).' },
+        endDate: { type: 'string', description: 'Fecha fin (YYYY-MM-DD).' },
+        limit: { type: 'number', description: 'Cantidad de productos en el ranking (default 10).' },
+        by: { type: 'string', enum: ['value', 'quantity'], description: 'Criterio de orden (default value).' },
+      },
+      required: ['startDate', 'endDate'],
+    },
+    outputSchema: envelope(genericObject, 'Ranking de productos vendidos.'),
+    annotations: RO,
+    handler: (args: any) =>
+      run(topProductsSchema, args, 'Top products', async (p) => {
+        const rows = await fetchAllPages(client, SIIGO_ENDPOINTS.INVOICES, {
+          created_start: p.startDate,
+          created_end: p.endDate,
+        });
+        const prod: Record<string, { code: string; description: string; quantity: number; total: number; count: number }> = {};
+        for (const inv of rows) {
+          for (const it of inv.items || []) {
+            const key = it.code || it.id || it.description || 'N/A';
+            prod[key] = prod[key] || { code: it.code || '', description: it.description || '', quantity: 0, total: 0, count: 0 };
+            prod[key].quantity += it.quantity || 0;
+            prod[key].total += it.total || 0;
+            prod[key].count += 1;
+          }
+        }
+        const sorted = Object.values(prod).sort((a, b) =>
+          p.by === 'quantity' ? b.quantity - a.quantity : b.total - a.total
+        );
+        return { period: { startDate: p.startDate, endDate: p.endDate }, by: p.by, products: sorted.slice(0, p.limit) };
+      }),
+  });
+}
+
+/**
+ * Recorre todas las páginas de un listado de Siigo y devuelve `results` concatenados.
+ * Cap de seguridad de 50 páginas.
+ */
+async function fetchAllPages(
+  client: SiigoClient,
+  endpoint: string,
+  params: Record<string, unknown>
+): Promise<any[]> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const all: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+  let page = 1;
+  for (; page <= 50; page++) {
+    const res: any = await client.get(endpoint, { params: { ...params, page, page_size: 100 } });
+    const results = res?.results || [];
+    all.push(...results);
+    const total = res?.pagination?.total_results ?? all.length;
+    if (all.length >= total || results.length === 0) break;
+  }
+  return all;
 }

@@ -1,11 +1,16 @@
 import { SiigoClient } from '../siigo/siigoClient.js';
 import { SIIGO_ENDPOINTS } from '../siigo/endpoints.js';
 import { validateInput } from '../utils/validation.js';
-import { listJournalsSchema, getJournalSchema } from '../schemas/siigo.schemas.js';
+import { listJournalsSchema, getJournalSchema, createJournalSchema } from '../schemas/siigo.schemas.js';
 import { paginated, single, journalSchema } from '../schemas/output.schemas.js';
+import { WRITE, run } from './_helpers.js';
 import logger from '../utils/logger.js';
 
-export function registerJournalTools(tools: Map<string, any>, client: SiigoClient) {
+export function registerJournalTools(
+  tools: Map<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+  client: SiigoClient,
+  enableWrite = false
+) {
   // List journal entries
   tools.set('siigo_list_journal_entries', {
     name: 'siigo_list_journal_entries',
@@ -45,5 +50,25 @@ export function registerJournalTools(tools: Map<string, any>, client: SiigoClien
       const result = await client.get(SIIGO_ENDPOINTS.JOURNAL(id));
       return { success: true, data: result };
     },
+  });
+
+  if (!enableWrite) return;
+
+  // Create journal entry (comprobante contable)
+  tools.set('siigo_create_journal', {
+    name: 'siigo_create_journal',
+    description:
+      'Crea un comprobante contable (CC). Recibe el objeto `journal` con la estructura del API (document.id, date, items[] con líneas débito/crédito por cuenta, etc.). Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: { journal: { type: 'object', description: 'Datos del comprobante contable (ver siigoapi.apib).' } },
+      required: ['journal'],
+    },
+    outputSchema: single(journalSchema, 'Comprobante contable creado.'),
+    annotations: WRITE,
+    handler: (args: any) =>
+      run(createJournalSchema, args, 'Creating journal', ({ journal }) =>
+        client.post(SIIGO_ENDPOINTS.JOURNALS, journal)
+      ),
   });
 }

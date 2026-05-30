@@ -69,9 +69,21 @@ Three schemas per tool, keep them aligned:
 
 `siigo_list_tools` (`src/tools/meta.tools.ts`) is an agentic catalog tool; the SDK `instructions` (in `createServer()`) tell clients to call it first. To add a tool category, create `src/tools/<x>.tools.ts` with a `register…` export and wire it in `mcpServer.ts:registerAllTools()`.
 
-### Write-tools flag is plumbed but not enforced
+### Shared helpers & write-tool gating
 
-`ENABLE_WRITE_TOOLS` → `enableWriteTools` is threaded down to `registerCustomerTools`/`registerInvoiceTools` as `_enableWrite`, but every tool currently ignores it (parameter is prefixed `_` and eslint-disabled). All registered tools are **read-only GETs today.** If you implement write operations, gate them on this flag rather than registering unconditionally.
+`src/tools/_helpers.ts` provides `run(zodSchema, args, logMsg, fn)` (validate → call → `{ success, data }`), the JSON-Schema prop fragments `pageProps`/`createdRangeProps`, and the `annotations` constants `RO` / `WRITE` / `DESTRUCTIVE`. New tools follow `src/tools/purchases.tools.ts` (the canonical example): read tools first, then `if (!enableWrite) return;`, then create/update/delete. `mcpServer.ts:registerAllTools()` passes `enableWriteTools` to every `registerXxxTools(tools, client, enableWrite)`; with it `false` (default) write tools are simply never registered, so they don't appear in `tools/list`. Every tool sets `annotations` (propagated to `tools/list`); deletes/annul use `DESTRUCTIVE` (`destructiveHint:true`). Write bodies use a lax `z.record` schema (e.g. `createInvoiceSchema`) since the full document shape lives in `siigoapi.apib`.
+
+### Reports & P&L
+
+`reports.tools.ts` has the accounting reports (`siigo_get_trial_balance`/`_by_third` via `POST /v1/test-balance-report*`, `siigo_get_accounts_payable`) plus value-added tools: `siigo_profit_and_loss`, `siigo_expenses_by_period`, `siigo_top_products`. The trial balance returns an Excel URL; `siigo_profit_and_loss` downloads it (axios) and parses it via `src/utils/xlsx.ts` (`parseXlsxRows` + `buildProfitAndLoss`, using **fflate** to unzip). Key xlsx gotchas captured there: cells have no `r` ref (map by sequential position) and class-4 income comes as a negative credit (sign is inverted). `fetchAllPages()` in `reports.tools.ts` paginates listings (cap 50 pages).
+
+### Tool count
+
+~51 read tools by default; ~81 with `ENABLE_WRITE_TOOLS=true`. The integration/gating tests assert both states (`tests/unit/gating.test.ts`).
+
+### Write-tools flag (enforced)
+
+`ENABLE_WRITE_TOOLS` → `enableWriteTools` is passed to every `registerXxxTools` and **gates registration** of create/update/delete/annul/email tools (see "Shared helpers & write-tool gating" below). Default is `false` → read-only. Catalog/report tools are always read-only and don't take the flag.
 
 ### Siigo client & auth
 

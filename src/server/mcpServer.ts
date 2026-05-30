@@ -18,6 +18,11 @@ import { registerJournalTools } from '../tools/journals.tools.js';
 import { registerReportTools } from '../tools/reports.tools.js';
 import { registerRawTools } from '../tools/raw.tools.js';
 import { registerMetaTools } from '../tools/meta.tools.js';
+import { registerPurchaseTools } from '../tools/purchases.tools.js';
+import { registerQuotationTools } from '../tools/quotations.tools.js';
+import { registerSupportDocumentTools } from '../tools/supportDocuments.tools.js';
+import { registerAccountGroupTools } from '../tools/accountGroups.tools.js';
+import { registerWebhookTools } from '../tools/webhooks.tools.js';
 
 const SERVER_INFO = {
   name: 'siigo-mcp-server',
@@ -49,17 +54,22 @@ export class MCPServer {
   private registerAllTools() {
     const { siigoClient, enableWriteTools } = this.options; // eslint-disable-line @typescript-eslint/no-unused-vars
 
-    // Register all tool categories
+    // Register all tool categories. enableWriteTools gates create/update/delete.
     registerCustomerTools(this.tools, siigoClient, enableWriteTools);
     registerInvoiceTools(this.tools, siigoClient, enableWriteTools);
-    registerProductTools(this.tools, siigoClient);
+    registerProductTools(this.tools, siigoClient, enableWriteTools);
     registerTaxTools(this.tools, siigoClient);
     registerUserTools(this.tools, siigoClient);
-    registerPaymentTools(this.tools, siigoClient);
-    registerCreditNoteTools(this.tools, siigoClient);
-    registerJournalTools(this.tools, siigoClient);
+    registerPaymentTools(this.tools, siigoClient, enableWriteTools);
+    registerCreditNoteTools(this.tools, siigoClient, enableWriteTools);
+    registerJournalTools(this.tools, siigoClient, enableWriteTools);
     registerReportTools(this.tools, siigoClient);
     registerRawTools(this.tools, siigoClient);
+    registerPurchaseTools(this.tools, siigoClient, enableWriteTools);
+    registerQuotationTools(this.tools, siigoClient, enableWriteTools);
+    registerSupportDocumentTools(this.tools, siigoClient, enableWriteTools);
+    registerAccountGroupTools(this.tools, siigoClient, enableWriteTools);
+    registerWebhookTools(this.tools, siigoClient, enableWriteTools);
     registerMetaTools(this.tools);
 
     logger.info({ toolCount: this.tools.size }, 'MCP tools registered');
@@ -85,6 +95,7 @@ export class MCPServer {
         description: tool.description,
         inputSchema: tool.inputSchema,
         ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+        ...(tool.annotations ? { annotations: tool.annotations } : {}),
       }));
 
       logger.debug({ count: toolsList.length }, 'Listing tools');

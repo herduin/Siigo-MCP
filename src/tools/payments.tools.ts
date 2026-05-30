@@ -8,6 +8,10 @@ import {
   getPaymentReceiptSchema,
   listReceivablesSchema,
   receivablesByCustomerSchema,
+  createVoucherSchema,
+  createPaymentReceiptSchema,
+  updatePaymentReceiptSchema,
+  idParamSchema,
 } from '../schemas/siigo.schemas.js';
 import {
   paginated,
@@ -16,6 +20,7 @@ import {
   paymentReceiptSchema,
   invoiceSchema,
 } from '../schemas/output.schemas.js';
+import { WRITE, DESTRUCTIVE, run } from './_helpers.js';
 import logger from '../utils/logger.js';
 
 const dateRangeProps = {
@@ -30,7 +35,11 @@ const pageProps = {
   page_size: { type: 'number', description: 'Tamaño de página (default: 25, máx: 100).' },
 };
 
-export function registerPaymentTools(tools: Map<string, any>, client: SiigoClient) {
+export function registerPaymentTools(
+  tools: Map<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+  client: SiigoClient,
+  enableWrite = false
+) {
   // --- Recibos de caja (pagos recibidos de clientes) ---
   tools.set('siigo_list_vouchers', {
     name: 'siigo_list_vouchers',
@@ -146,5 +155,81 @@ export function registerPaymentTools(tools: Map<string, any>, client: SiigoClien
       }
       return { success: true, data: result };
     },
+  });
+
+  if (!enableWrite) return;
+
+  // Create voucher (recibo de caja)
+  tools.set('siigo_create_voucher', {
+    name: 'siigo_create_voucher',
+    description:
+      'Crea un recibo de caja (pago recibido de un cliente). Recibe el objeto `voucher` con la estructura del API (document.id, customer, payment, items[] con facturas abonadas, etc.). Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: { voucher: { type: 'object', description: 'Datos del recibo de caja (ver siigoapi.apib).' } },
+      required: ['voucher'],
+    },
+    outputSchema: single(voucherSchema, 'Recibo de caja creado.'),
+    annotations: WRITE,
+    handler: (args: any) =>
+      run(createVoucherSchema, args, 'Creating voucher', ({ voucher }) =>
+        client.post(SIIGO_ENDPOINTS.VOUCHERS, voucher)
+      ),
+  });
+
+  // Create payment receipt (recibo de pago/egreso)
+  tools.set('siigo_create_payment_receipt', {
+    name: 'siigo_create_payment_receipt',
+    description:
+      'Crea un recibo de pago/egreso (pago realizado a un proveedor). Recibe el objeto `payment_receipt` con la estructura del API. Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        payment_receipt: { type: 'object', description: 'Datos del recibo de pago/egreso (ver siigoapi.apib).' },
+      },
+      required: ['payment_receipt'],
+    },
+    outputSchema: single(paymentReceiptSchema, 'Recibo de pago/egreso creado.'),
+    annotations: WRITE,
+    handler: (args: any) =>
+      run(createPaymentReceiptSchema, args, 'Creating payment receipt', ({ payment_receipt }) =>
+        client.post(SIIGO_ENDPOINTS.PAYMENT_RECEIPTS, payment_receipt)
+      ),
+  });
+
+  // Update payment receipt
+  tools.set('siigo_update_payment_receipt', {
+    name: 'siigo_update_payment_receipt',
+    description: 'Actualiza un recibo de pago/egreso existente por su ID. Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'ID (GUID) del recibo de pago/egreso.' },
+        payment_receipt: { type: 'object', description: 'Datos a actualizar.' },
+      },
+      required: ['id', 'payment_receipt'],
+    },
+    outputSchema: single(paymentReceiptSchema, 'Recibo de pago/egreso actualizado.'),
+    annotations: WRITE,
+    handler: (args: any) =>
+      run(updatePaymentReceiptSchema, args, 'Updating payment receipt', ({ id, payment_receipt }) =>
+        client.put(SIIGO_ENDPOINTS.PAYMENT_RECEIPT(id), payment_receipt)
+      ),
+  });
+
+  // Delete payment receipt
+  tools.set('siigo_delete_payment_receipt', {
+    name: 'siigo_delete_payment_receipt',
+    description: 'Elimina un recibo de pago/egreso. Operación destructiva. Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'ID (GUID) del recibo de pago/egreso.' } },
+      required: ['id'],
+    },
+    annotations: DESTRUCTIVE,
+    handler: (args: any) =>
+      run(idParamSchema, args, 'Deleting payment receipt', ({ id }) =>
+        client.delete(SIIGO_ENDPOINTS.PAYMENT_RECEIPT(id))
+      ),
   });
 }

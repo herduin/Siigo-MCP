@@ -175,3 +175,97 @@ export const accountsReceivableAgingSchema = z.object({
 export const monthlyRevenueReportSchema = z.object({
   months: z.number().int().min(1).max(36).default(12),
 });
+
+// ---------------------------------------------------------------------------
+// Recursos nuevos: Purchases / Quotations / Support documents / Account groups
+// ---------------------------------------------------------------------------
+export const idParamSchema = z.object({ id: z.string().min(1) });
+const listWithRange = z.object({ ...paginationSchema.shape, ...createdRangeSchema.shape });
+
+export const listPurchasesSchema = listWithRange;
+export const listQuotationsSchema = listWithRange;
+export const listSupportDocumentsSchema = listWithRange;
+
+// ---------------------------------------------------------------------------
+// Reportes contables (Siigo)
+// ---------------------------------------------------------------------------
+export const trialBalanceSchema = z.object({
+  year: z.number().int(),
+  month_start: z.number().int().min(1).max(13),
+  month_end: z.number().int().min(1).max(13),
+  includes_tax_difference: z.boolean().default(false),
+  account_start: z.string().optional(),
+  account_end: z.string().optional(),
+});
+
+export const trialBalanceByThirdSchema = z.object({
+  ...trialBalanceSchema.shape,
+  customer: z
+    .object({ identification: z.string(), branch_office: z.number().int().optional() })
+    .optional(),
+});
+
+export const accountsPayableSchema = paginationSchema;
+
+// ---------------------------------------------------------------------------
+// Reportes de valor agregado del MCP
+// ---------------------------------------------------------------------------
+export const profitAndLossSchema = z.object({
+  year: z.number().int(),
+  month_start: z.number().int().min(1).max(13).default(1),
+  month_end: z.number().int().min(1).max(13),
+});
+
+export const expensesByPeriodSchema = z.object({
+  startDate: dateString,
+  endDate: dateString,
+});
+
+export const topProductsSchema = z.object({
+  startDate: dateString,
+  endDate: dateString,
+  limit: z.number().int().min(1).max(50).default(10),
+  by: z.enum(['quantity', 'value']).default('value'),
+});
+
+// ---------------------------------------------------------------------------
+// Escritura (cuerpos genéricos — la estructura completa está en siigoapi.apib)
+// ---------------------------------------------------------------------------
+const anyRecord = z.record(z.string(), z.unknown());
+
+export const createInvoiceSchema = z.object({ invoice: anyRecord });
+export const updateInvoiceSchema = z.object({ id: z.string().min(1), invoice: anyRecord });
+export const mailInvoiceSchema = z.object({
+  id: z.string().min(1),
+  mail_to: z.string().email(),
+  copy_to: z.string().email().optional(),
+});
+export const batchInvoiceSchema = z.object({ batch: anyRecord });
+
+export const createCustomerSchema = z.object({ customer: anyRecord });
+export const updateCustomerSchema = z.object({ id: z.string().min(1), customer: anyRecord });
+
+export const createProductSchema = z.object({ product: anyRecord });
+export const updateProductSchema = z.object({ id: z.string().min(1), product: anyRecord });
+
+export const createQuotationSchema = z.object({ quotation: anyRecord });
+export const updateQuotationSchema = z.object({ id: z.string().min(1), quotation: anyRecord });
+
+export const createPurchaseSchema = z.object({ purchase: anyRecord });
+export const updatePurchaseSchema = z.object({ id: z.string().min(1), purchase: anyRecord });
+
+export const createSupportDocumentSchema = z.object({ support_document: anyRecord });
+export const updateSupportDocumentSchema = z.object({ id: z.string().min(1), support_document: anyRecord });
+
+export const createPaymentReceiptSchema = z.object({ payment_receipt: anyRecord });
+export const updatePaymentReceiptSchema = z.object({ id: z.string().min(1), payment_receipt: anyRecord });
+
+export const createCreditNoteSchema = z.object({ credit_note: anyRecord });
+export const createVoucherSchema = z.object({ voucher: anyRecord });
+export const createJournalSchema = z.object({ journal: anyRecord });
+
+export const createAccountGroupSchema = z.object({ account_group: anyRecord });
+export const updateAccountGroupSchema = z.object({ id: z.number().int(), account_group: anyRecord });
+
+export const createWebhookSchema = z.object({ webhook: anyRecord });
+export const updateWebhookSchema = z.object({ id: z.string().min(1), webhook: anyRecord });

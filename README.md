@@ -224,21 +224,52 @@ The AI agent can now:
 - `siigo_list_receivables` - Facturas con saldo pendiente (balance > 0)
 - `siigo_list_accounts_receivable_by_customer` - Cartera de un cliente (por customer_identification)
 
-### Credit Notes
-- `siigo_list_credit_notes` - List credit notes
-- `siigo_get_credit_note` - Get credit note details
+### Notas crédito
+- `siigo_list_credit_notes` - Lista notas crédito
+- `siigo_get_credit_note` - Nota crédito por ID
+- `siigo_get_credit_note_pdf` - PDF de la nota crédito
 
-### Accounting
-- `siigo_list_journal_entries` - List journal entries
-- `siigo_get_journal_entry` - Get journal entry details
+### Compras / gastos
+- `siigo_list_purchases` - Lista facturas de compra/gasto (filtros de fecha)
+- `siigo_get_purchase` - Compra por ID
 
-### AI-Optimized Reports
-- `siigo_financial_summary` - Financial metrics summary
-- `siigo_sales_summary` - Sales trends by period
-- `siigo_customer_statement` - Customer account statement
-- `siigo_monthly_revenue_report` - Monthly revenue trends
-- `siigo_tax_summary` - Tax collection summary
-- `siigo_accounts_receivable_aging` - AR aging analysis
+### Cotizaciones
+- `siigo_list_quotations` - Lista cotizaciones
+- `siigo_get_quotation` - Cotización por ID
+
+### Documentos soporte
+- `siigo_list_support_documents` - Lista documentos soporte
+- `siigo_get_support_document` - Documento soporte por ID
+
+### Inventario / catálogos adicionales
+- `siigo_list_account_groups` - Categorías de inventario
+- `siigo_list_warehouses` - Bodegas
+- `siigo_list_price_lists` - Listas de precio
+- `siigo_list_fixed_assets` - Activos fijos
+- `siigo_list_cities`, `siigo_list_id_types`, `siigo_list_fiscal_responsibilities`
+
+### Contabilidad
+- `siigo_list_journal_entries` - Lista comprobantes contables
+- `siigo_get_journal_entry` - Comprobante por ID
+
+### Reportes contables (Siigo)
+- `siigo_get_trial_balance` - Balance de prueba (Excel)
+- `siigo_get_trial_balance_by_third` - Balance de prueba por tercero
+- `siigo_get_accounts_payable` - Cuentas por pagar
+
+### Reportes de valor agregado (MCP)
+- `siigo_profit_and_loss` - **Estado de Resultados (P&L) ya estructurado** (descarga y procesa el balance de prueba)
+- `siigo_expenses_by_period` - Gastos por proveedor y concepto
+- `siigo_top_products` - Ranking de productos vendidos
+- `siigo_financial_summary`, `siigo_sales_summary`, `siigo_customer_statement`, `siigo_monthly_revenue_report`, `siigo_tax_summary`, `siigo_accounts_receivable_aging`
+
+### Escritura (CRUD) — requiere `ENABLE_WRITE_TOOLS=true`
+Deshabilitadas por defecto. Cada una declara `annotations` (`readOnlyHint:false`; `destructiveHint:true` en delete/annul) para que el agente distinga operaciones peligrosas.
+- Facturas: `siigo_create_invoice`, `siigo_update_invoice`, `siigo_delete_invoice`, `siigo_annul_invoice`, `siigo_send_invoice_email`, `siigo_create_invoice_batch`
+- Clientes/Productos/Cotizaciones/Compras/Doc. soporte/Recibos pago: `create` / `update` / `delete`
+- Notas crédito / Recibos de caja / Comprobantes: `create`
+- Categorías inventario: `create` / `update`
+- Webhooks: `siigo_list_webhooks`, `create` / `update` / `delete`
 
 ## 📡 HTTP Endpoints
 

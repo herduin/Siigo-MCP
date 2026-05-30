@@ -5,11 +5,19 @@ import {
   listProductsSchema,
   getProductSchema,
   searchProductsSchema,
+  createProductSchema,
+  updateProductSchema,
+  idParamSchema,
 } from '../schemas/siigo.schemas.js';
 import { paginated, single, envelope, productSchema } from '../schemas/output.schemas.js';
+import { WRITE, DESTRUCTIVE, run } from './_helpers.js';
 import logger from '../utils/logger.js';
 
-export function registerProductTools(tools: Map<string, any>, client: SiigoClient) {
+export function registerProductTools(
+  tools: Map<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+  client: SiigoClient,
+  enableWrite = false
+) {
   // List products
   tools.set('siigo_list_products', {
     name: 'siigo_list_products',
@@ -122,5 +130,59 @@ export function registerProductTools(tools: Map<string, any>, client: SiigoClien
         },
       };
     },
+  });
+
+  if (!enableWrite) return;
+
+  // Create product
+  tools.set('siigo_create_product', {
+    name: 'siigo_create_product',
+    description:
+      'Crea un producto/servicio en el inventario de Siigo. Recibe el objeto `product` con la estructura del API (code, name, account_group, type, prices[], taxes[], etc.). Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: { product: { type: 'object', description: 'Datos del producto (ver siigoapi.apib).' } },
+      required: ['product'],
+    },
+    outputSchema: single(productSchema, 'Producto creado.'),
+    annotations: WRITE,
+    handler: (args: any) =>
+      run(createProductSchema, args, 'Creating product', ({ product }) =>
+        client.post(SIIGO_ENDPOINTS.PRODUCTS, product)
+      ),
+  });
+
+  // Update product
+  tools.set('siigo_update_product', {
+    name: 'siigo_update_product',
+    description: 'Actualiza un producto/servicio existente por su ID. Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'ID (GUID) del producto.' },
+        product: { type: 'object', description: 'Datos a actualizar.' },
+      },
+      required: ['id', 'product'],
+    },
+    outputSchema: single(productSchema, 'Producto actualizado.'),
+    annotations: WRITE,
+    handler: (args: any) =>
+      run(updateProductSchema, args, 'Updating product', ({ id, product }) =>
+        client.put(SIIGO_ENDPOINTS.PRODUCT(id), product)
+      ),
+  });
+
+  // Delete product
+  tools.set('siigo_delete_product', {
+    name: 'siigo_delete_product',
+    description: 'Elimina un producto/servicio. Operación destructiva. Requiere ENABLE_WRITE_TOOLS.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'ID (GUID) del producto.' } },
+      required: ['id'],
+    },
+    annotations: DESTRUCTIVE,
+    handler: (args: any) =>
+      run(idParamSchema, args, 'Deleting product', ({ id }) => client.delete(SIIGO_ENDPOINTS.PRODUCT(id))),
   });
 }
