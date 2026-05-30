@@ -80,18 +80,38 @@ jobs:
           ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
         run: |
           set -euo pipefail
+          # Normaliza la base: quita '/' final y un sufijo '/api' si viene incluido
+          BASE="${PORTAINER_URL%/}"; BASE="${BASE%/api}"
+          api() { curl -sS -H "X-API-Key: $PORTAINER_API_KEY" "$@"; }
+
+          # Sanity check: la lista de stacks valida URL + token
+          code=$(api -o stacks.json -w '%{http_code}' "$BASE/api/stacks")
+          if [ "$code" != "200" ]; then
+            echo "::error::GET $BASE/api/stacks devolvió HTTP $code (revisa PORTAINER_URL y PORTAINER_API_KEY)"
+            cat stacks.json || true
+            exit 1
+          fi
+          echo "Stacks disponibles (Id | Name | EndpointId):"
+          jq -r '.[] | "\(.Id) | \(.Name) | \(.EndpointId)"' stacks.json
+
+          # Verifica que el STACK_ID exista
+          if ! jq -e --argjson id "$STACK_ID" 'any(.[]; .Id == $id)' stacks.json >/dev/null; then
+            echo "::error::STACK_ID=$STACK_ID no existe. Usa uno de la lista de arriba."
+            exit 1
+          fi
+
           # 1) Env actual del stack (se reenvía sin cambios)
-          env_json=$(curl -fsSL -H "X-API-Key: $PORTAINER_API_KEY" \
-            "$PORTAINER_URL/api/stacks/$STACK_ID" | jq '.Env // []')
+          env_json=$(jq --argjson id "$STACK_ID" '[.[] | select(.Id == $id)][0].Env // []' stacks.json)
           # 2) Contenido actual del compose
-          file_content=$(curl -fsSL -H "X-API-Key: $PORTAINER_API_KEY" \
-            "$PORTAINER_URL/api/stacks/$STACK_ID/file" | jq -r '.StackFileContent')
+          file_content=$(api "$BASE/api/stacks/$STACK_ID/file" | jq -r '.StackFileContent')
           # 3) PUT con pullImage=true: re-baja :latest y recrea el contenedor
           jq -n --arg content "$file_content" --argjson env "$env_json" \
             '{stackFileContent:$content, env:$env, prune:false, pullImage:true}' \
             > payload.json
-          curl -fsSL -X PUT \
-            -H "X-API-Key: $PORTAINER_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data @payload.json \
-            "$PORTAINER_URL/api/stacks/$STACK_ID?endpointId=$ENDPOINT_ID"
+          code=$(api -o put.json -w '%{http_code}' -X PUT \
+            -H "Content-Type: application/json" --data @payload.json \
+            "$BASE/api/stacks/$STACK_ID?endpointId=$ENDPOINT_ID")
+          if [ "$code" != "200" ]; then
+            echo "::error::PUT stack devolvió HTTP $code"; cat put.json || true; exit 1
+          fi
+          echo "Stack $STACK_ID redeployado (pullImage=true)."
