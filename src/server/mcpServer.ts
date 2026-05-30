@@ -29,6 +29,35 @@ const SERVER_INFO = {
   version: '1.0.0',
 };
 
+/**
+ * Desenvuelve el envelope { tool, id, params } que envían algunos clientes
+ * (notablemente el AI Agent de n8n) y devuelve los argumentos reales planos.
+ * La detección se ancla en la clave `tool` (string): ningún inputSchema de
+ * Siigo declara un campo `tool`, por lo que las llamadas legítimas —incluido
+ * `siigo_raw_request`, que sí tiene un campo `params`— nunca se desenvuelven.
+ */
+export function unwrapToolArgs(
+  rawArgs: unknown
+): Record<string, unknown> {
+  if (
+    rawArgs &&
+    typeof rawArgs === 'object' &&
+    !Array.isArray(rawArgs)
+  ) {
+    const obj = rawArgs as Record<string, unknown>;
+    if (
+      typeof obj.tool === 'string' &&
+      obj.params &&
+      typeof obj.params === 'object' &&
+      !Array.isArray(obj.params)
+    ) {
+      return obj.params as Record<string, unknown>;
+    }
+    return obj;
+  }
+  return {};
+}
+
 const SERVER_INSTRUCTIONS =
   'Servidor MCP de la API de Siigo (contabilidad/facturación Colombia). ' +
   'IMPORTANTE: al conectarte, invoca primero la herramienta `siigo_list_tools` para obtener el catálogo ' +
@@ -104,7 +133,7 @@ export class MCPServer {
 
     // Call tool handler
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
+      const { name, arguments: rawArgs } = request.params;
 
       logger.info({ tool: name }, 'Calling tool');
 
@@ -113,8 +142,16 @@ export class MCPServer {
         throw new Error(`Unknown tool: ${name}`);
       }
 
+      // Algunos clientes (p.ej. el AI Agent de n8n) NO envían los parámetros
+      // planos sino envueltos en un envelope { tool, id, params:{...} }. En ese
+      // caso los campos reales viven bajo `params` y la validación Zod fallaría
+      // con "<campo>: Required" en bucle infinito. Desenvolvemos por la clave
+      // `tool` (ningún inputSchema de Siigo tiene un campo llamado `tool`, así
+      // que la detección es segura y no afecta llamadas legítimas).
+      const args = unwrapToolArgs(rawArgs);
+
       try {
-        const result = await tool.handler(args || {});
+        const result = await tool.handler(args);
         return {
           content: [
             {
