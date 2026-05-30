@@ -68,7 +68,6 @@ export function registerMetaTools(tools: Map<string, any>) {
           },
         },
       },
-      required: ['success', 'data'],
     },
     handler: async () => {
       logger.info('Listing tool catalog (siigo_list_tools)');

@@ -11,7 +11,14 @@ type JsonSchema = Record<string, unknown>;
 
 // --- Helpers de envoltorio ---------------------------------------------------
 
-/** Envuelve un schema de payload en `{ success, data }`. */
+/**
+ * Envuelve un schema de payload en `{ success, data }`.
+ *
+ * Nota: NO se marca `required`. El outputSchema documenta la forma para el agente,
+ * pero los clientes MCP (p. ej. n8n) validan `structuredContent` de forma estricta:
+ * un `required` rompería la respuesta (`-32602`) en error-paths o cuando Siigo omite
+ * campos opcionales. Describimos sin exigir.
+ */
 export function envelope(dataSchema: JsonSchema, dataDescription?: string): JsonSchema {
   return {
     type: 'object',
@@ -19,7 +26,7 @@ export function envelope(dataSchema: JsonSchema, dataDescription?: string): Json
       success: { type: 'boolean', description: 'Indica si la operación fue exitosa.' },
       data: dataDescription ? { ...dataSchema, description: dataDescription } : dataSchema,
     },
-    required: ['success', 'data'],
+    additionalProperties: true,
   };
 }
 
@@ -47,7 +54,7 @@ export function paginated(itemSchema: JsonSchema): JsonSchema {
       results: { type: 'array', items: itemSchema, description: 'Resultados de la página actual.' },
       _links: linksObject,
     },
-    required: ['results'],
+    additionalProperties: true,
   });
 }
 
