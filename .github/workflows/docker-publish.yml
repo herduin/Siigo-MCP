@@ -71,7 +71,27 @@ jobs:
         if: github.event_name != 'pull_request'
         run: sleep 10
 
-      - name: Trigger Portainer stack update
+      - name: Redeploy Portainer stack (API access token)
         if: github.event_name != 'pull_request'
+        env:
+          PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
+          PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
+          STACK_ID: ${{ secrets.PORTAINER_STACK_ID }}
+          ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
         run: |
-          curl -fsSL -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}"
+          set -euo pipefail
+          # 1) Env actual del stack (se reenvía sin cambios)
+          env_json=$(curl -fsSL -H "X-API-Key: $PORTAINER_API_KEY" \
+            "$PORTAINER_URL/api/stacks/$STACK_ID" | jq '.Env // []')
+          # 2) Contenido actual del compose
+          file_content=$(curl -fsSL -H "X-API-Key: $PORTAINER_API_KEY" \
+            "$PORTAINER_URL/api/stacks/$STACK_ID/file" | jq -r '.StackFileContent')
+          # 3) PUT con pullImage=true: re-baja :latest y recrea el contenedor
+          jq -n --arg content "$file_content" --argjson env "$env_json" \
+            '{stackFileContent:$content, env:$env, prune:false, pullImage:true}' \
+            > payload.json
+          curl -fsSL -X PUT \
+            -H "X-API-Key: $PORTAINER_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data @payload.json \
+            "$PORTAINER_URL/api/stacks/$STACK_ID?endpointId=$ENDPOINT_ID"
