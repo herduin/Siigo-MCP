@@ -148,6 +148,8 @@ describe('HttpServer — MCP Streamable HTTP transport', () => {
     const body = parseSse(await res.text());
     const payload = JSON.parse(body.result.content[0].text);
     expect(payload.success).toBe(true);
+    // Tools con outputSchema DEBEN devolver structuredContent o el MCP Client (n8n) falla con -32600
+    expect(body.result.structuredContent, 'falta structuredContent').toEqual(payload);
     expect(payload.data.total).toBeGreaterThanOrEqual(30);
     expect(payload.data.groups.Clientes).toBeTruthy();
     expect(payload.data.groups['Facturas de venta']).toBeTruthy();

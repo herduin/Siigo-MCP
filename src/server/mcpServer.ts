@@ -111,6 +111,9 @@ export class MCPServer {
               text: JSON.stringify(result, null, 2),
             },
           ],
+          // El SDK MCP exige structuredContent cuando la tool declara outputSchema;
+          // sin esto, clientes como n8n rechazan la respuesta con -32600.
+          ...(tool.outputSchema ? { structuredContent: result } : {}),
         };
       } catch (error) {
         logger.error({ tool: name, error }, 'Tool execution failed');
