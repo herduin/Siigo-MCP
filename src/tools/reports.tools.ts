@@ -140,10 +140,11 @@ export function registerReportTools(tools: Map<string, any>, client: SiigoClient
       const params = validateInput(salesSummarySchema, args);
       logger.info({ params }, 'Generating sales summary');
 
-      const invoices = await client.get(SIIGO_ENDPOINTS.INVOICES, {
-        params: toCreatedRange(params.startDate, params.endDate),
-      });
-      const invoicesData = (invoices as any).results || [];
+      const invoicesData = await fetchAllPages(
+        client,
+        SIIGO_ENDPOINTS.INVOICES,
+        toCreatedRange(params.startDate, params.endDate)
+      );
 
       const grouped: Record<string, { total: number; count: number }> = {};
       invoicesData.forEach((inv: any) => {
@@ -212,20 +213,20 @@ export function registerReportTools(tools: Map<string, any>, client: SiigoClient
       logger.info({ params }, 'Generating customer statement');
       const range = toCreatedRange(params.startDate, params.endDate);
 
-      const [customerSearch, invoices, vouchers] = await Promise.all([
+      const [customerSearch, invoicesData, vouchersAll] = await Promise.all([
         client.get(SIIGO_ENDPOINTS.CUSTOMERS, {
           params: { identification: params.customer_identification },
         }),
-        client.get(SIIGO_ENDPOINTS.INVOICES, {
-          params: { ...range, customer_identification: params.customer_identification },
+        fetchAllPages(client, SIIGO_ENDPOINTS.INVOICES, {
+          ...range,
+          customer_identification: params.customer_identification,
         }),
-        client.get(SIIGO_ENDPOINTS.VOUCHERS, { params: range }),
+        fetchAllPages(client, SIIGO_ENDPOINTS.VOUCHERS, range),
       ]);
 
       const customer = (customerSearch as any).results?.[0] || null;
-      const invoicesData = (invoices as any).results || [];
       // Los recibos de caja no se filtran por cliente en la API; se filtran en memoria.
-      const paymentsData = ((vouchers as any).results || []).filter(
+      const paymentsData = vouchersAll.filter(
         (v: any) => v.customer?.identification === params.customer_identification
       );
 
@@ -278,13 +279,11 @@ export function registerReportTools(tools: Map<string, any>, client: SiigoClient
       const startDate = new Date();
       startDate.setMonth(startDate.getMonth() - months);
 
-      const invoices = await client.get(SIIGO_ENDPOINTS.INVOICES, {
-        params: toCreatedRange(
-          startDate.toISOString().split('T')[0],
-          endDate.toISOString().split('T')[0]
-        ),
-      });
-      const invoicesData = (invoices as any).results || [];
+      const invoicesData = await fetchAllPages(
+        client,
+        SIIGO_ENDPOINTS.INVOICES,
+        toCreatedRange(startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0])
+      );
 
       const monthly: Record<string, number> = {};
       invoicesData.forEach((inv: any) => {
@@ -339,10 +338,11 @@ export function registerReportTools(tools: Map<string, any>, client: SiigoClient
       const params = validateInput(financialSummarySchema, args);
       logger.info({ params }, 'Generating tax summary');
 
-      const invoices = await client.get(SIIGO_ENDPOINTS.INVOICES, {
-        params: toCreatedRange(params.startDate, params.endDate),
-      });
-      const invoicesData = (invoices as any).results || [];
+      const invoicesData = await fetchAllPages(
+        client,
+        SIIGO_ENDPOINTS.INVOICES,
+        toCreatedRange(params.startDate, params.endDate)
+      );
 
       const taxTotals: Record<string, { name: string; total: number; count: number }> = {};
       invoicesData.forEach((inv: any) => {
@@ -392,12 +392,14 @@ export function registerReportTools(tools: Map<string, any>, client: SiigoClient
       const asOfDate = params.asOfDate ? new Date(params.asOfDate) : new Date();
       logger.info({ params }, 'Generating AR aging report');
 
-      const invoices: any = await client.get(SIIGO_ENDPOINTS.INVOICES, {
-        params: params.customer_identification
+      const allInvoices = await fetchAllPages(
+        client,
+        SIIGO_ENDPOINTS.INVOICES,
+        params.customer_identification
           ? { customer_identification: params.customer_identification }
-          : {},
-      });
-      const invoicesData = (invoices.results || []).filter((inv: any) => (inv.balance ?? 0) > 0);
+          : {}
+      );
+      const invoicesData = allInvoices.filter((inv: any) => (inv.balance ?? 0) > 0);
 
       const aging = {
         current: { total: 0, count: 0, invoices: [] as any[] },

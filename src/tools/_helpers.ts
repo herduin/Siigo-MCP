@@ -33,7 +33,7 @@ export function run<T>(
   schema: z.ZodSchema<T>,
   args: unknown,
   label: string,
-  fn: (params: T) => Promise<unknown>
+  fn: (_params: T) => Promise<unknown>
 ) {
   return (async () => {
     const params = validateInput(schema, args);
