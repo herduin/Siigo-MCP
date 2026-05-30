@@ -638,23 +638,37 @@ export function registerReportTools(tools: Map<string, any>, client: SiigoClient
   });
 }
 
+const MAX_PAGES = 400; // tope de seguridad (Siigo pagina de a 25 → hasta 10.000 registros)
+const PAGE_BATCH = 5; // páginas en paralelo por lote (respeta el rate limit de Siigo)
+
 /**
- * Recorre todas las páginas de un listado de Siigo y devuelve `results` concatenados.
- * Cap de seguridad de 50 páginas.
+ * Recorre TODAS las páginas de un listado de Siigo y devuelve `results` concatenados.
+ * Siigo ignora page_size grande y pagina de a ~25, por lo que se calcula el número
+ * de páginas desde total_results y se traen en lotes paralelos. Tope: MAX_PAGES.
  */
 async function fetchAllPages(
   client: SiigoClient,
   endpoint: string,
   params: Record<string, unknown>
 ): Promise<any[]> { // eslint-disable-line @typescript-eslint/no-explicit-any
-  const all: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-  let page = 1;
-  for (; page <= 50; page++) {
-    const res: any = await client.get(endpoint, { params: { ...params, page, page_size: 100 } });
-    const results = res?.results || [];
-    all.push(...results);
-    const total = res?.pagination?.total_results ?? all.length;
-    if (all.length >= total || results.length === 0) break;
+  const first: any = await client.get(endpoint, { params: { ...params, page: 1, page_size: 100 } }); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const all: any[] = [...(first?.results || [])]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const total = first?.pagination?.total_results ?? all.length;
+  const pageSize = first?.pagination?.page_size || all.length || 25;
+  const totalPages = Math.min(Math.ceil(total / pageSize), MAX_PAGES);
+  if (totalPages <= 1 || all.length === 0) return all;
+
+  for (let start = 2; start <= totalPages; start += PAGE_BATCH) {
+    const batch = [];
+    for (let p = start; p < start + PAGE_BATCH && p <= totalPages; p++) {
+      batch.push(
+        client
+          .get(endpoint, { params: { ...params, page: p, page_size: 100 } })
+          .then((r: any) => r?.results || []) // eslint-disable-line @typescript-eslint/no-explicit-any
+      );
+    }
+    const results = await Promise.all(batch);
+    for (const r of results) all.push(...r);
   }
   return all;
 }
