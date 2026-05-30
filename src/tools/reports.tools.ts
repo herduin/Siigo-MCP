@@ -68,15 +68,11 @@ export function registerReportTools(tools: Map<string, any>, client: SiigoClient
       logger.info({ params }, 'Generating financial summary');
       const range = toCreatedRange(params.startDate, params.endDate);
 
-      const [invoices, vouchers, creditNotes] = await Promise.all([
-        client.get(SIIGO_ENDPOINTS.INVOICES, { params: range }),
-        client.get(SIIGO_ENDPOINTS.VOUCHERS, { params: range }),
-        client.get(SIIGO_ENDPOINTS.CREDIT_NOTES, { params: range }),
+      const [invoicesData, vouchersData, creditNotesData] = await Promise.all([
+        fetchAllPages(client, SIIGO_ENDPOINTS.INVOICES, range),
+        fetchAllPages(client, SIIGO_ENDPOINTS.VOUCHERS, range),
+        fetchAllPages(client, SIIGO_ENDPOINTS.CREDIT_NOTES, range),
       ]);
-
-      const invoicesData = (invoices as any).results || [];
-      const vouchersData = (vouchers as any).results || [];
-      const creditNotesData = (creditNotes as any).results || [];
 
       const totalRevenue = invoicesData.reduce((s: number, inv: any) => s + (inv.total || 0), 0);
       const totalPayments = vouchersData.reduce(
