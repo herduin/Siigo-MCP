@@ -52,6 +52,13 @@ export class HttpServer {
   }
 
   private setupHealthRoutes() {
+    // Evita que proxies/CDN (p. ej. Cloudflare) cacheen estos GET y muestren
+    // info desactualizada (nº de tools, readiness) tras un redeploy.
+    this.app.get(['/health', '/ready', '/version'], (_req, res, next) => {
+      res.set('Cache-Control', 'no-store');
+      next();
+    });
+
     // Health check endpoint
     this.app.get('/health', (_req: Request, res: Response) => {
       res.json({
