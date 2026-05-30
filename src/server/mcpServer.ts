@@ -128,7 +128,15 @@ export class MCPServer {
         };
       } catch (error) {
         logger.error({ tool: name, error }, 'Tool execution failed');
-        throw error;
+        // Patrón MCP: los errores de ejecución (validación de input, fallos de
+        // Siigo) se devuelven como resultado con isError:true, NO como error de
+        // protocolo. Así el agente IA (n8n) ve el mensaje y puede auto-corregir,
+        // en vez de recibir un -32603 opaco que aborta el flujo.
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: message }],
+          isError: true,
+        };
       }
     });
 

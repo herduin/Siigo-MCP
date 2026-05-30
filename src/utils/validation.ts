@@ -11,13 +11,30 @@ export class ValidationError extends Error {
   }
 }
 
+/**
+ * Convierte un ZodError en un mensaje legible por humanos (y por el agente IA),
+ * p.ej. "page: Expected number, received string; identification: Required".
+ * Sin esto el cliente solo ve "Input validation failed" y no puede corregir.
+ */
+function formatZodError(error: z.ZodError): string {
+  return error.errors
+    .map((e) => {
+      const path = e.path.join('.') || '(root)';
+      return `${path}: ${e.message}`;
+    })
+    .join('; ');
+}
+
 export function validateInput<T>(schema: z.ZodSchema<T>, data: unknown): T {
   try {
     return schema.parse(data);
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.warn({ errors: error.errors }, 'Validation failed');
-      throw new ValidationError('Input validation failed', error);
+      throw new ValidationError(
+        `Input validation failed - ${formatZodError(error)}`,
+        error
+      );
     }
     throw error;
   }
